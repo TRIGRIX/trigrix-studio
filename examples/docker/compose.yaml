@@ -1,0 +1,8 @@
+services:
+  web-studio:
+    build: .
+    restart: unless-stopped
+    # Uncomment when WhatsApp/Instagram/Messenger webhooks are enabled.
+    # ports:
+    #   - "8080:8080"
+    env_file: .env

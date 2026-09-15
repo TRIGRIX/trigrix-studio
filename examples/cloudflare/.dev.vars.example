@@ -1,0 +1,7 @@
+# Telegram bot token
+BOT_TOKEN=
+# Webhook verification secret
+WEBHOOK_SECRET=
+# Chat ID for new requests
+ADMIN_CHAT_ID=
+

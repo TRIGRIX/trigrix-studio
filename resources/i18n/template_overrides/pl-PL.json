@@ -1,0 +1,17 @@
+{
+  "First response": "Pierwsza odpowiedź",
+  "Configure the bot’s first response.": "Skonfiguruj pierwszą odpowiedź bota.",
+  "Your bot name": "Nazwa Twojego bota",
+  "Company assistant": "Asystent firmy",
+  "Empty multichannel project": "Pusty projekt wielokanałowy",
+  "Telegram bot token": "Token bota Telegram",
+  "Webhook verification secret": "Sekret weryfikacji webhooka",
+  "Enter your response": "Wprowadź odpowiedź",
+  "Select an option:": "Wybierz opcję:",
+  "Name": "Nazwisko.",
+  "Phone": "Telefon.",
+  "Request summary": "Karta obiegowa",
+  "NEW REQUEST": "NOWE WYBÓR",
+  "ID: {{ request_id }}\nName: {{ name }}\nPhone: {{ phone }}\nTelegram: @{{ user.username }}": "Nr: {{ request_id }} \n Nazwa: {{ name }} \n Tel.: {{ phone }} \n Telegram: @ {{ user.username }}",
+  "ID: {{ request_id }}\nService: {{ service.title }}\nName: {{ client_name }}\nContact: {{ client_contact }}\nRequest: {{ details }}\nTelegram: @{{ user.username }}\nTelegram ID: {{ user.id }}": "Nr: {{ request_id }} \n Direction: {{ service.title }} {{ client_name }} \n Contact: {{ client_contact }} \n Zadanie: {{ details }} \n Telegram: @ {{ user.username }} \n Telegram ID: {{ user.id }}"
+}

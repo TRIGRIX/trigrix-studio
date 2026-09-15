@@ -1,0 +1,686 @@
+{
+  "format": "trigrix-studio",
+  "schema_version": 2,
+  "metadata": {
+    "project_id": "1d7f9de8b45d",
+    "name": "Multichannel application",
+    "description": "Neutral international scenario of collection and delivery of leads",
+    "author": "",
+    "created_at": "2026-09-14T21:29:21.003012+00:00",
+    "modified_at": "2026-09-14T21:29:21.004353+00:00",
+    "template": "multichannel-lead",
+    "product": "TRIGRIX Studio"
+  },
+  "bot": {
+    "display_name": "Your bot name",
+    "username": "",
+    "about": "Company assistant",
+    "description": "Neutral international scenario of collection and delivery of leads",
+    "parse_mode": "HTML",
+    "allowed_updates": [
+      "message",
+      "callback_query"
+    ],
+    "commands": [
+      {
+        "command": "start",
+        "description": "Main menu"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "name": "lead_name",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 100
+    },
+    {
+      "name": "lead_phone",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 40
+    },
+    {
+      "name": "lead_email",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 160
+    },
+    {
+      "name": "lead_country",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 80
+    },
+    {
+      "name": "answer_details",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 1000
+    },
+    {
+      "name": "request_id",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 32
+    },
+    {
+      "name": "lead",
+      "type": "object",
+      "persistence": "context"
+    }
+  ],
+  "environment": [
+    {
+      "name": "BOT_TOKEN",
+      "description": "Telegram bot token",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare",
+        "docker"
+      ]
+    },
+    {
+      "name": "WEBHOOK_SECRET",
+      "description": "Webhook verification secret",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare"
+      ]
+    },
+    {
+      "name": "ADMIN_CHAT_ID",
+      "description": "Telegram Chat ID administrator",
+      "kind": "normal",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare",
+        "docker"
+      ]
+    }
+  ],
+  "dictionaries": [],
+  "contacts": [],
+  "recipients": [
+    {
+      "id": "admin",
+      "title": "Administrator",
+      "chat_id_env": "ADMIN_CHAT_ID"
+    }
+  ],
+  "channels": [
+    {
+      "id": "telegram_default",
+      "type": "telegram",
+      "title": "Telegram",
+      "enabled": true,
+      "account_id": "default",
+      "credentials": {
+        "bot_token": "BOT_TOKEN"
+      },
+      "webhook_path": "/webhook/telegram",
+      "webhook_secret_env": "WEBHOOK_SECRET",
+      "settings": {
+        "admin_chat_id_env": "ADMIN_CHAT_ID",
+        "admin_thread_id": null
+      }
+    },
+    {
+      "id": "whatsapp_default",
+      "type": "whatsapp",
+      "title": "WhatsApp Business",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "WHATSAPP_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/whatsapp",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "instagram_default",
+      "type": "instagram",
+      "title": "Instagram Messaging",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "INSTAGRAM_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/instagram",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "messenger_default",
+      "type": "messenger",
+      "title": "Facebook Messenger",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "MESSENGER_PAGE_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/messenger",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "viber_default",
+      "type": "viber",
+      "title": "Viber (commercial)",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "auth_token": "VIBER_AUTH_TOKEN"
+      },
+      "webhook_path": "/webhook/viber",
+      "webhook_secret_env": "VIBER_AUTH_TOKEN",
+      "settings": {}
+    }
+  ],
+  "localization": {
+    "default_locale": "en-US",
+    "fallback_locale": "en-US",
+    "enabled_locales": [
+      "en-US",
+      "de-DE",
+      "fr-FR",
+      "es-ES",
+      "pt-BR",
+      "it-IT",
+      "nl-NL",
+      "pl-PL",
+      "tr-TR",
+      "ru-RU"
+    ],
+    "bot_texts": {}
+  },
+  "lead_storage": {
+    "enabled": false,
+    "provider": "none",
+    "project_id": "",
+    "database_id": "(default)",
+    "collection_path": "leads",
+    "credentials_env": "FIREBASE_SERVICE_ACCOUNT_JSON",
+    "mode": "leads",
+    "allowed_fields": []
+  },
+  "notifications": {
+    "admin_summary": true,
+    "email": false,
+    "crm": false,
+    "firebase": false,
+    "continue_on_error": true
+  },
+  "crm_integrations": [
+    {
+      "id": "crm_main",
+      "provider": "hubspot",
+      "title": "HubSpot",
+      "enabled": false,
+      "base_url": "",
+      "auth_env": "HUBSPOT_TOKEN",
+      "pipeline": "",
+      "status": "",
+      "owner": "",
+      "entity": "lead",
+      "duplicate_fields": [
+        "phone",
+        "email",
+        "channel_user_id"
+      ],
+      "field_mapping": {},
+      "settings": {}
+    }
+  ],
+  "email": {
+    "enabled": false,
+    "mode": "cloudflare_free",
+    "provider": "cloudflare",
+    "sender_name": "TRIGRIX Bot",
+    "sender_address": "",
+    "recipients": [],
+    "verified_recipients": [],
+    "binding_name": "EMAIL",
+    "api_url": "",
+    "api_key_env": "EMAIL_API_KEY",
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_encryption": "starttls",
+    "smtp_username_env": "SMTP_USERNAME",
+    "smtp_password_env": "SMTP_PASSWORD",
+    "subject_template": "New lead {{ lead.lead_id }}",
+    "text_template": "{{ lead }}",
+    "html_template": "",
+    "retries": 2
+  },
+  "lead_export": {
+    "enabled": false,
+    "formats": [
+      "xlsx",
+      "csv"
+    ],
+    "admin_commands": [
+      "/export_leads",
+      "/export_leads_today",
+      "/export_leads_week",
+      "/export_leads_month"
+    ],
+    "page_size": 500,
+    "include_sheets": [
+      "Contacts",
+      "Leads",
+      "Answers",
+      "Sources",
+      "CRM references",
+      "Export metadata"
+    ]
+  },
+  "flows": [
+    {
+      "id": "lead",
+      "title": "Multichannel lead",
+      "start_node_id": "start"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "command_trigger",
+      "title": "/start",
+      "position": {
+        "x": 40.0,
+        "y": 140.0
+      },
+      "settings": {
+        "command": "start",
+        "description": "Main menu",
+        "private_only": false
+      },
+      "required": true,
+      "group": "Start"
+    },
+    {
+      "id": "name",
+      "type": "collect_lead_field",
+      "title": "Name",
+      "position": {
+        "x": 360.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "What is your name?",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 100,
+        "pattern": "",
+        "variable": "lead_name",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again.",
+        "field": "name"
+      },
+      "required": true,
+      "group": "Lead"
+    },
+    {
+      "id": "phone",
+      "type": "collect_lead_field",
+      "title": "Phone",
+      "position": {
+        "x": 700.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Enter your phone number.",
+        "answer_type": "phone",
+        "required": true,
+        "min_length": null,
+        "max_length": 40,
+        "pattern": "",
+        "variable": "lead_phone",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again.",
+        "field": "phone"
+      },
+      "required": true,
+      "group": "Lead"
+    },
+    {
+      "id": "email",
+      "type": "collect_lead_field",
+      "title": "Email",
+      "position": {
+        "x": 1040.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Enter your email address.",
+        "answer_type": "email",
+        "required": true,
+        "min_length": null,
+        "max_length": 160,
+        "pattern": "",
+        "variable": "lead_email",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again.",
+        "field": "email"
+      },
+      "required": true,
+      "group": "Lead"
+    },
+    {
+      "id": "country",
+      "type": "collect_lead_field",
+      "title": "Country",
+      "position": {
+        "x": 1380.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Country or region",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 80,
+        "pattern": "",
+        "variable": "lead_country",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again.",
+        "field": "country"
+      },
+      "required": true,
+      "group": "Lead"
+    },
+    {
+      "id": "details",
+      "type": "collect_lead_field",
+      "title": "Request",
+      "position": {
+        "x": 1720.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Describe your request.",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 1000,
+        "pattern": "",
+        "variable": "answer_details",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again.",
+        "field": "free_answer"
+      },
+      "required": true,
+      "group": "Lead"
+    },
+    {
+      "id": "request_id",
+      "type": "request_id",
+      "title": "Lead ID",
+      "position": {
+        "x": 2060.0,
+        "y": 80.0
+      },
+      "settings": {
+        "prefix": "LEAD",
+        "random_length": 6,
+        "variable": "request_id"
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "complete",
+      "type": "complete_lead",
+      "title": "Complete lead",
+      "position": {
+        "x": 2400.0,
+        "y": 80.0
+      },
+      "settings": {
+        "lead_id_variable": "request_id",
+        "name_variable": "lead_name",
+        "phone_variable": "lead_phone",
+        "email_variable": "lead_email",
+        "country_variable": "lead_country",
+        "answers_prefix": "answer_",
+        "output_variable": "lead"
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "firebase",
+      "type": "save_lead",
+      "title": "Save to Firebase",
+      "position": {
+        "x": 2740.0,
+        "y": 80.0
+      },
+      "settings": {
+        "storage": "project_default",
+        "lead_variable": "lead",
+        "continue_on_error": true
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "email_notify",
+      "type": "notify_email",
+      "title": "Notify Email",
+      "position": {
+        "x": 3080.0,
+        "y": 80.0
+      },
+      "settings": {
+        "email_profile": "project_default",
+        "lead_variable": "lead",
+        "continue_on_error": true
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "crm",
+      "type": "push_crm",
+      "title": "Push to CRM",
+      "position": {
+        "x": 3420.0,
+        "y": 80.0
+      },
+      "settings": {
+        "crm_id": "crm_main",
+        "lead_variable": "lead",
+        "operation": "create_lead",
+        "continue_on_error": true
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "admin",
+      "type": "send_admin_summary",
+      "title": "Admin summary",
+      "position": {
+        "x": 3760.0,
+        "y": 80.0
+      },
+      "settings": {
+        "recipient": "admin",
+        "lead_variable": "lead",
+        "title": "NEW LEAD",
+        "template": "ID: {{ lead.lead_id }}\nName: {{ lead.name }}\nPhone: {{ lead.phone }}\nEmail: {{ lead.email }}\nCountry: {{ lead.country }}"
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "export",
+      "type": "export_leads",
+      "title": "Admin export",
+      "position": {
+        "x": 4100.0,
+        "y": 80.0
+      },
+      "settings": {
+        "period": "all",
+        "format": "xlsx",
+        "recipient": "admin",
+        "admin_only": true,
+        "channel": "",
+        "project": "",
+        "status": "",
+        "source": "",
+        "owner": ""
+      },
+      "required": true,
+      "group": "Delivery"
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "title": "Completed",
+      "position": {
+        "x": 4440.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Thank you. Your request {{ request_id }} has been received.",
+        "show_main_menu": true
+      },
+      "required": true,
+      "group": "Finish"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_next_name",
+      "source": "start",
+      "source_port": "next",
+      "target": "name",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_name_next_phone",
+      "source": "name",
+      "source_port": "next",
+      "target": "phone",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_phone_next_email",
+      "source": "phone",
+      "source_port": "next",
+      "target": "email",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_email_next_country",
+      "source": "email",
+      "source_port": "next",
+      "target": "country",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_country_next_details",
+      "source": "country",
+      "source_port": "next",
+      "target": "details",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_details_next_request_id",
+      "source": "details",
+      "source_port": "next",
+      "target": "request_id",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_request_id_next_complete",
+      "source": "request_id",
+      "source_port": "next",
+      "target": "complete",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_complete_next_firebase",
+      "source": "complete",
+      "source_port": "next",
+      "target": "firebase",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_firebase_next_email_notify",
+      "source": "firebase",
+      "source_port": "next",
+      "target": "email_notify",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_email_notify_next_crm",
+      "source": "email_notify",
+      "source_port": "next",
+      "target": "crm",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_crm_next_admin",
+      "source": "crm",
+      "source_port": "next",
+      "target": "admin",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_admin_next_export",
+      "source": "admin",
+      "source_port": "next",
+      "target": "export",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_export_next_finish",
+      "source": "export",
+      "source_port": "next",
+      "target": "finish",
+      "target_port": "in",
+      "label": ""
+    }
+  ],
+  "export": {
+    "cloudflare_worker_name": "multichannel-lead",
+    "docker_service_name": "multichannel-lead",
+    "context_limit": 1400,
+    "http_timeout_seconds": 15
+  },
+  "ui": {
+    "zoom": 1.0,
+    "center_x": 0.0,
+    "center_y": 0.0,
+    "grid": true,
+    "minimap": true
+  }
+}

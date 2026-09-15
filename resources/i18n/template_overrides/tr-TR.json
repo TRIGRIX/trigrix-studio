@@ -1,0 +1,17 @@
+{
+  "First response": "İlk yanıt",
+  "Configure the bot’s first response.": "Botun ilk yanıtını yapılandırın.",
+  "Your bot name": "Botunuzun adı",
+  "Company assistant": "Şirket asistanı",
+  "Empty multichannel project": "Boş çok kanallı proje",
+  "Telegram bot token": "Telegram bot tokeni",
+  "Webhook verification secret": "Webhook doğrulama gizli anahtarı",
+  "Enter your response": "Yanıtınızı girin",
+  "Select an option:": "Bir seçenek belirleyin:",
+  "Name": "Ad.",
+  "Phone": "Telefon.",
+  "Request summary": "dolaşım kartı",
+  "NEW REQUEST": "NEW CALLING",
+  "ID: {{ request_id }}\nName: {{ name }}\nPhone: {{ phone }}\nTelegram: @{{ user.username }}": "Hayır: {{ request_id }} \n Ad: {{ name }} \n Telefon: {{ phone }} \n Tel: @ {{ user.username }}",
+  "ID: {{ request_id }}\nService: {{ service.title }}\nName: {{ client_name }}\nContact: {{ client_contact }}\nRequest: {{ details }}\nTelegram: @{{ user.username }}\nTelegram ID: {{ user.id }}": "No: {{ request_id }} \n Yön: {{ service.title }} {{ client_name }} \n İletişim: {{ client_contact }} \n Görev: {{ details }} \n Tel: @ {{ user.username }} \n Telegram ID: {{ user.id }}"
+}

@@ -1,0 +1,218 @@
+"""Generated lead delivery services. Secrets are read only from the environment."""
+from __future__ import annotations
+
+import asyncio
+import json
+import tempfile
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from typing import Any
+from uuid import uuid4
+from pathlib import Path
+
+from .project_data import PROJECT
+from .runtime import render
+from .lead_export import export_leads_csv, export_leads_xlsx
+
+
+class IntegrationDeliveryError(RuntimeError):
+    pass
+
+
+def complete_lead(context: dict[str, Any], settings: dict[str, Any], channel: str = "telegram", account_id: str = "default") -> dict[str, Any]:
+    variables = context.get("vars", context)
+    prefix = str(settings.get("answers_prefix", "answer_"))
+    user = context.get("user", {})
+    lead_id = variables.get(settings.get("lead_id_variable", "request_id")) or uuid4().hex
+    return {
+        "lead_id": str(lead_id), "created_at": datetime.now(timezone.utc).isoformat(),
+        "channel": channel, "account_id": account_id, "user_id": str(user.get("id", "")),
+        "channel_user_id": f'{channel}:{account_id}:{user.get("id", "")}',
+        "name": variables.get(settings.get("name_variable", "lead_name"), ""),
+        "phone": variables.get(settings.get("phone_variable", "lead_phone"), ""),
+        "email": variables.get(settings.get("email_variable", "lead_email"), ""),
+        "country": variables.get(settings.get("country_variable", "lead_country"), ""),
+        "answers": {key: value for key, value in variables.items() if str(key).startswith(prefix)},
+        "status": "new", "source": {"chat_id": context.get("chat", {}).get("id"), "message_id": context.get("message", {}).get("id")},
+        "admin_message_id": "", "crm_refs": {}, "exported_at": None,
+    }
+
+
+class IntegrationRuntime:
+    def __init__(self, transport: Any, env: dict[str, Any]) -> None:
+        self.transport = transport
+        self.env = env
+
+    async def save_lead(self, lead: dict[str, Any]) -> dict[str, Any]:
+        settings = PROJECT.get("lead_storage", {})
+        if not settings.get("enabled") or settings.get("provider") != "firebase":
+            return {"destination": "firebase", "ok": True, "status": "disabled"}
+        token = await self._firebase_token(settings)
+        if not token:
+            raise IntegrationDeliveryError("Firebase secret must contain an OAuth access_token or token value")
+        project_id = settings.get("project_id", "")
+        database = settings.get("database_id", "(default)")
+        collection = settings.get("collection_path", "leads").strip("/")
+        url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents/{collection}/{lead['lead_id']}"
+        response = await self.transport.http({"method": "PATCH", "url": url, "headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, "json_body": {"fields": _firestore_fields(lead)}, "timeout": 20}, {}, self.env)
+        return {"destination": "firebase", "ok": True, "response": response}
+
+    async def notify_email(self, lead: dict[str, Any]) -> dict[str, Any]:
+        settings = PROJECT.get("email", {})
+        if not settings.get("enabled"):
+            return {"destination": "email", "ok": True, "status": "disabled"}
+        recipients = list(settings.get("recipients", []))
+        subject = render(PROJECT, str(settings.get("subject_template", "New lead")), {"lead": lead}, self.env)
+        text = render(PROJECT, str(settings.get("text_template", "{{ lead }}")), {"lead": lead}, self.env)
+        mode = settings.get("mode", "cloudflare_free")
+        if mode == "cloudflare_free":
+            verified = set(settings.get("verified_recipients", []))
+            if any(item not in verified for item in recipients):
+                raise IntegrationDeliveryError("Cloudflare Free recipient is not verified")
+            binding = self.env.get(settings.get("binding_name", "EMAIL"))
+            if binding is None:
+                raise IntegrationDeliveryError("Cloudflare send_email binding is unavailable")
+            payload = {"to": recipients, "from": settings.get("sender_address", ""), "subject": subject, "text": text}
+            try:
+                from js import Object
+                from pyodide.ffi import to_js
+                payload = to_js(payload, dict_converter=Object.fromEntries)
+            except ImportError:
+                pass
+            result = await binding.send(payload)
+            return {"destination": "email", "ok": True, "external_id": str(getattr(result, "messageId", ""))}
+        if mode == "smtp":
+            await asyncio.to_thread(self._send_smtp, settings, recipients, subject, text)
+            return {"destination": "email", "ok": True}
+        token = self.env.get(settings.get("api_key_env", "EMAIL_API_KEY"), "")
+        response = await self.transport.http({"method": "POST", "url": settings.get("api_url", ""), "headers": {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, "json_body": {"from": settings.get("sender_address"), "to": recipients, "subject": subject, "text": text, "html": settings.get("html_template", "")}, "timeout": 20}, {}, self.env)
+        return {"destination": "email", "ok": True, "response": response}
+
+    async def push_crm(self, crm_id: str, lead: dict[str, Any]) -> dict[str, Any]:
+        integration = next((item for item in PROJECT.get("crm_integrations", []) if item.get("id") == crm_id and item.get("enabled")), None)
+        if not integration:
+            raise IntegrationDeliveryError(f"CRM integration {crm_id!r} is unavailable")
+        token = self.env.get(integration.get("auth_env", "CRM_API_TOKEN"), "")
+        base = str(integration.get("base_url") or integration.get("settings", {}).get("base_url", "")).rstrip("/")
+        path = str(integration.get("settings", {}).get("create_path", ""))
+        if not base:
+            raise IntegrationDeliveryError("CRM base URL is not configured")
+        mapping = integration.get("field_mapping") or {"name": "name", "email": "email", "phone": "phone", "lead_id": "external_id"}
+        body = {target: _lookup(lead, source) for source, target in mapping.items() if _lookup(lead, source) not in (None, "")}
+        provider = integration.get("provider")
+        if provider == "hubspot": body = {"properties": body}
+        elif provider == "zoho": body = {"data": [body]}
+        elif provider == "freshsales": body = {"contact": body}
+        elif provider == "frappe": body = {"data": body}
+        elif provider == "suitecrm": body = {"data": {"type": "Leads", "attributes": body}}
+        elif provider == "odoo": body = {"jsonrpc": "2.0", "method": "call", "params": {"service": "object", "method": "execute_kw", "args": [integration.get("settings", {}).get("database", ""), integration.get("settings", {}).get("uid", 0), token, "crm.lead", "create", [body]]}, "id": lead.get("lead_id")}
+        auth_header = integration.get("settings", {}).get("auth_header", "Authorization")
+        auth_prefix = integration.get("settings", {}).get("auth_prefix", "Bearer ")
+        response = await self.transport.http({"method": "POST", "url": base + path, "headers": {auth_header: f"{auth_prefix}{token}", "Content-Type": "application/json"}, "json_body": body, "timeout": 20}, {}, self.env)
+        external_id = str(response.get("id", "")) if isinstance(response, dict) else ""
+        if external_id: lead.setdefault("crm_refs", {})[crm_id] = external_id
+        return {"destination": f"crm:{crm_id}", "ok": True, "external_id": external_id}
+
+    async def export_leads(self, settings: dict[str, Any], recipient: dict[str, Any]) -> dict[str, Any]:
+        storage = PROJECT.get("lead_storage", {})
+        if not storage.get("enabled") or storage.get("provider") != "firebase":
+            raise IntegrationDeliveryError("Lead export requires enabled Firebase storage")
+        token = await self._firebase_token(storage)
+        project_id = storage.get("project_id", ""); database = storage.get("database_id", "(default)"); collection = storage.get("collection_path", "leads").strip("/")
+        page_size = int(PROJECT.get("lead_export", {}).get("page_size", 500))
+        base_url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database}/documents/{collection}"
+        leads: list[dict[str, Any]] = []
+        page_token = ""
+        while True:
+            url = f"{base_url}?pageSize={page_size}"
+            if page_token: url += f"&pageToken={page_token}"
+            response = await self.transport.http({"method": "GET", "url": url, "headers": {"Authorization": f"Bearer {token}"}, "timeout": 30}, {}, self.env)
+            if not isinstance(response, dict): break
+            leads.extend(_from_firestore((item.get("fields") or {})) for item in (response.get("documents") or []))
+            page_token = str(response.get("nextPageToken") or "")
+            if not page_token: break
+        period = settings.get("period", "all")
+        days = {"today": 1, "week": 7, "month": 31}.get(period)
+        if days:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            def recent(item: dict[str, Any]) -> bool:
+                try: return datetime.fromisoformat(str(item.get("created_at", "")).replace("Z", "+00:00")) >= cutoff
+                except (TypeError, ValueError): return False
+            leads = [item for item in leads if recent(item)]
+        filters = {key: str(settings.get(key, "")).strip() for key in ("channel", "project", "status", "source", "owner")}
+        filters = {key: value for key, value in filters.items() if value}
+        if filters:
+            def matches(item: dict[str, Any]) -> bool:
+                for key, expected in filters.items():
+                    actual = item.get(key)
+                    if key in {"source", "owner"}:
+                        actual = (item.get("source") or {}).get(key, actual)
+                    if str(actual or "") != expected: return False
+                return True
+            leads = [item for item in leads if matches(item)]
+        file_format = settings.get("format", "xlsx"); suffix = ".xlsx" if file_format == "xlsx" else ".csv"
+        target = Path(tempfile.gettempdir()) / f"trigrix-leads-{uuid4().hex[:8]}{suffix}"
+        metadata = {"period": period, **filters, "page_size": page_size}
+        (export_leads_xlsx if file_format == "xlsx" else export_leads_csv)(leads, target, metadata)
+        try:
+            await self.transport.send_document(self.env[recipient["chat_id_env"]], target.read_bytes(), target.name, "TRIGRIX Studio lead export", recipient.get("thread_id"))
+        finally:
+            try: target.unlink()
+            except OSError: pass
+        return {"destination": "lead_export", "ok": True, "count": len(leads)}
+
+    async def _firebase_token(self, settings: dict[str, Any]) -> str:
+        secret = str(self.env.get(settings.get("credentials_env", "FIREBASE_SERVICE_ACCOUNT_JSON"), ""))
+        if not secret: raise IntegrationDeliveryError("Firebase credentials secret is empty")
+        try:
+            credentials = json.loads(secret)
+        except json.JSONDecodeError:
+            return secret
+        if credentials.get("access_token"): return str(credentials["access_token"])
+        if credentials.get("private_key") and credentials.get("client_email"):
+            return await self.transport.service_account_token(secret)
+        raise IntegrationDeliveryError("Firebase secret is not a service account JSON or OAuth token")
+
+    def _send_smtp(self, settings: dict[str, Any], recipients: list[str], subject: str, text: str) -> None:
+        import smtplib
+        message = EmailMessage(); message["From"] = settings.get("sender_address", ""); message["To"] = ", ".join(recipients); message["Subject"] = subject; message.set_content(text)
+        host, port = settings.get("smtp_host", ""), int(settings.get("smtp_port", 587))
+        client_class = smtplib.SMTP_SSL if settings.get("smtp_encryption") == "tls" else smtplib.SMTP
+        with client_class(host, port, timeout=30) as client:
+            if settings.get("smtp_encryption") == "starttls": client.starttls()
+            username = self.env.get(settings.get("smtp_username_env", "SMTP_USERNAME"), "")
+            password = self.env.get(settings.get("smtp_password_env", "SMTP_PASSWORD"), "")
+            if username: client.login(username, password)
+            client.send_message(message)
+
+
+def _lookup(value: dict[str, Any], path: str) -> Any:
+    current: Any = value
+    for part in path.split("."):
+        current = current.get(part) if isinstance(current, dict) else None
+    return current
+
+
+def _firestore_fields(value: dict[str, Any]) -> dict[str, Any]:
+    def field(item: Any) -> dict[str, Any]:
+        if item is None: return {"nullValue": None}
+        if isinstance(item, bool): return {"booleanValue": item}
+        if isinstance(item, int): return {"integerValue": str(item)}
+        if isinstance(item, float): return {"doubleValue": item}
+        if isinstance(item, list): return {"arrayValue": {"values": [field(v) for v in item]}}
+        if isinstance(item, dict): return {"mapValue": {"fields": {str(k): field(v) for k, v in item.items()}}}
+        return {"stringValue": str(item)}
+    return {str(key): field(item) for key, item in value.items()}
+
+
+def _from_firestore(fields: dict[str, Any]) -> dict[str, Any]:
+    def value(item: dict[str, Any]) -> Any:
+        if "nullValue" in item: return None
+        if "booleanValue" in item: return item["booleanValue"]
+        if "integerValue" in item: return int(item["integerValue"])
+        if "doubleValue" in item: return item["doubleValue"]
+        if "stringValue" in item: return item["stringValue"]
+        if "arrayValue" in item: return [value(v) for v in item["arrayValue"].get("values", [])]
+        if "mapValue" in item: return {k: value(v) for k, v in item["mapValue"].get("fields", {}).items()}
+        return ""
+    return {key: value(item) for key, item in fields.items()}

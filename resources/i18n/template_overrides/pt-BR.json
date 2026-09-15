@@ -1,0 +1,17 @@
+{
+  "First response": "Primeira resposta",
+  "Configure the bot’s first response.": "Configure a primeira resposta do bot.",
+  "Your bot name": "Nome do seu bot",
+  "Company assistant": "Assistente da empresa",
+  "Empty multichannel project": "Projeto multicanal vazio",
+  "Telegram bot token": "Token do bot do Telegram",
+  "Webhook verification secret": "Segredo de verificação do webhook",
+  "Enter your response": "Digite sua resposta",
+  "Select an option:": "Selecione uma opção:",
+  "Name": "Nome.",
+  "Phone": "Telefone.",
+  "Request summary": "Cartão de circulação",
+  "NEW REQUEST": "NOVA CHAMADA",
+  "ID: {{ request_id }}\nName: {{ name }}\nPhone: {{ phone }}\nTelegram: @{{ user.username }}": "N.o: {{ request_id }} \n Nome: {{ name }} \n Telefone: {{ phone }} \n Telegram: @ {{ user.username }}",
+  "ID: {{ request_id }}\nService: {{ service.title }}\nName: {{ client_name }}\nContact: {{ client_contact }}\nRequest: {{ details }}\nTelegram: @{{ user.username }}\nTelegram ID: {{ user.id }}": "N.o: {{ request_id }} \n Direcção: {{ service.title }} {{ client_name }} \n Contacto: {{ client_contact }} \n Tarefa: {{ details }} \n Telegram: @ {{ user.username }} \n Telegram ID: {{ user.id }}"
+}

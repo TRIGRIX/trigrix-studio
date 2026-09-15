@@ -1,0 +1,14 @@
+import json
+import os
+import urllib.parse
+import urllib.request
+
+token = os.environ["BOT_TOKEN"]
+data = urllib.parse.urlencode({
+    "url": os.environ["WORKER_URL"],
+    "secret_token": os.environ["WEBHOOK_SECRET"],
+    "allowed_updates": json.dumps(["message", "callback_query"]),
+}).encode()
+with urllib.request.urlopen(f"https://api.telegram.org/bot{token}/setWebhook", data=data, timeout=15) as response:
+    print(response.read().decode())
+

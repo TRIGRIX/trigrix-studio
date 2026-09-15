@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+
+import aiohttp
+from aiogram import Bot, Dispatcher
+from aiogram.types import Update
+from aiohttp import web
+
+from .channels import GraphApiTransport, normalize, verify_signature, verify_viber_signature
+from .flow import FlowRuntime
+from .project_data import PROJECT
+from .telegram import AiogramTransport
+
+
+async def http_request(method, url, headers, body):
+    async with aiohttp.ClientSession() as session:
+        async with session.request(method, url, headers=headers, json=body, timeout=30) as response:
+            try: return await response.json()
+            except Exception: return {"status": response.status, "text": (await response.text())[:2000]}
+
+
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    env = dict(os.environ)
+    channels = [item for item in PROJECT.get("channels", []) if item.get("enabled")]
+    telegram = next((item for item in channels if item.get("type") == "telegram"), None)
+    runner = None
+
+    async def webhook(request: web.Request) -> web.Response:
+        channel = next((item for item in channels if item.get("webhook_path") == request.path), None)
+        if not channel: return web.Response(status=404, text="Not found")
+        if request.method == "GET":
+            token_env = channel.get("credentials", {}).get("verify_token", "META_VERIFY_TOKEN")
+            if request.query.get("hub.mode") == "subscribe" and request.query.get("hub.verify_token") == env.get(token_env):
+                return web.Response(text=request.query.get("hub.challenge", ""))
+            return web.Response(status=403, text="Forbidden")
+        raw = await request.read()
+        secret = env.get(channel.get("webhook_secret_env", "META_APP_SECRET"), "")
+        signature_ok = verify_viber_signature(raw, secret, request.headers.get("X-Viber-Content-Signature", "")) if channel["type"] == "viber" else verify_signature(raw, secret, request.headers.get("X-Hub-Signature-256", ""))
+        if not signature_ok:
+            return web.Response(status=403, text="Forbidden")
+        update = normalize(channel["type"], await request.json(), channel.get("account_id", "default"))
+        if update: await FlowRuntime(GraphApiTransport(channel, env, http_request, AiogramTransport(None).service_account_token), env).handle(update)
+        return web.Response(text="OK")
+
+    non_telegram = [item for item in channels if item.get("type") != "telegram"]
+    if non_telegram:
+        app = web.Application()
+        for channel in non_telegram: app.router.add_route("*", channel["webhook_path"], webhook)
+        runner = web.AppRunner(app); await runner.setup(); await web.TCPSite(runner, "0.0.0.0", int(env.get("WEBHOOK_PORT", "8080"))).start()
+
+    if not telegram:
+        await asyncio.Event().wait(); return
+    token_env = telegram.get("credentials", {}).get("bot_token", "BOT_TOKEN")
+    token = env.get(token_env)
+    if not token: raise RuntimeError(f"{token_env} is not configured")
+    bot = Bot(token=token); runtime = FlowRuntime(AiogramTransport(bot), env); dispatcher = Dispatcher()
+
+    @dispatcher.update()
+    async def handle_update(update: Update) -> None:
+        await runtime.handle(update.model_dump(mode="json", exclude_none=True))
+
+    await bot.delete_webhook(drop_pending_updates=False)
+    try: await dispatcher.start_polling(bot, allowed_updates={{ project.bot.allowed_updates | tojson }})
+    finally:
+        if runner: await runner.cleanup()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

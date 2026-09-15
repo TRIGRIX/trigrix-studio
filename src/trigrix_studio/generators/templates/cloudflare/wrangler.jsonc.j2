@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "{{ project.export.cloudflare_worker_name }}",
+  "main": "src/entry.py",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["python_workers"]{% if email_binding %},
+  "send_email": [{{ email_binding | tojson }}]
+  {% endif %}
+}
