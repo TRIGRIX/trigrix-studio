@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trigrix-studio"
+version = "1.0.0"
+description = "Visual multichannel bot and lead workflow builder for Cloudflare Workers and Docker"
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS :: MacOS X",
+]
+dependencies = [
+  "PySide6>=6.8,<7",
+  "pydantic>=2.10,<3",
+  "Jinja2>=3.1,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-cov>=6"]
+
+[project.scripts]
+trigrix-studio = "trigrix_studio.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"

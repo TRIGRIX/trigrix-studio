@@ -1,0 +1,336 @@
+{
+  "format": "trigrix-studio",
+  "schema_version": 2,
+  "metadata": {
+    "project_id": "cdd424644761",
+    "name": "Simple menu",
+    "description": "Bot with a simple menu",
+    "author": "",
+    "created_at": "2026-09-14T21:29:20.996230+00:00",
+    "modified_at": "2026-09-14T21:29:20.996924+00:00",
+    "template": "simple-menu",
+    "product": "TRIGRIX Studio"
+  },
+  "bot": {
+    "display_name": "Your bot name",
+    "username": "",
+    "about": "Company assistant",
+    "description": "Bot with a simple menu",
+    "parse_mode": "HTML",
+    "allowed_updates": [
+      "message",
+      "callback_query"
+    ],
+    "commands": [
+      {
+        "command": "start",
+        "description": "Main menu"
+      }
+    ]
+  },
+  "variables": [],
+  "environment": [
+    {
+      "name": "BOT_TOKEN",
+      "description": "Telegram bot token",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare",
+        "docker"
+      ]
+    },
+    {
+      "name": "WEBHOOK_SECRET",
+      "description": "Webhook verification secret",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare"
+      ]
+    }
+  ],
+  "dictionaries": [],
+  "contacts": [],
+  "recipients": [],
+  "channels": [
+    {
+      "id": "telegram_default",
+      "type": "telegram",
+      "title": "Telegram",
+      "enabled": true,
+      "account_id": "default",
+      "credentials": {
+        "bot_token": "BOT_TOKEN"
+      },
+      "webhook_path": "/webhook/telegram",
+      "webhook_secret_env": "WEBHOOK_SECRET",
+      "settings": {
+        "admin_chat_id_env": "ADMIN_CHAT_ID",
+        "admin_thread_id": null
+      }
+    },
+    {
+      "id": "whatsapp_default",
+      "type": "whatsapp",
+      "title": "WhatsApp Business",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "WHATSAPP_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/whatsapp",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "instagram_default",
+      "type": "instagram",
+      "title": "Instagram Messaging",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "INSTAGRAM_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/instagram",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "messenger_default",
+      "type": "messenger",
+      "title": "Facebook Messenger",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "MESSENGER_PAGE_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/messenger",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "viber_default",
+      "type": "viber",
+      "title": "Viber (commercial)",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "auth_token": "VIBER_AUTH_TOKEN"
+      },
+      "webhook_path": "/webhook/viber",
+      "webhook_secret_env": "VIBER_AUTH_TOKEN",
+      "settings": {}
+    }
+  ],
+  "localization": {
+    "default_locale": "en-US",
+    "fallback_locale": "en-US",
+    "enabled_locales": [
+      "en-US",
+      "de-DE",
+      "fr-FR",
+      "es-ES",
+      "pt-BR",
+      "it-IT",
+      "nl-NL",
+      "pl-PL",
+      "tr-TR",
+      "ru-RU"
+    ],
+    "bot_texts": {}
+  },
+  "lead_storage": {
+    "enabled": false,
+    "provider": "none",
+    "project_id": "",
+    "database_id": "(default)",
+    "collection_path": "leads",
+    "credentials_env": "FIREBASE_SERVICE_ACCOUNT_JSON",
+    "mode": "leads",
+    "allowed_fields": []
+  },
+  "notifications": {
+    "admin_summary": true,
+    "email": false,
+    "crm": false,
+    "firebase": false,
+    "continue_on_error": true
+  },
+  "crm_integrations": [],
+  "email": {
+    "enabled": false,
+    "mode": "cloudflare_free",
+    "provider": "cloudflare",
+    "sender_name": "TRIGRIX Bot",
+    "sender_address": "",
+    "recipients": [],
+    "verified_recipients": [],
+    "binding_name": "EMAIL",
+    "api_url": "",
+    "api_key_env": "EMAIL_API_KEY",
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_encryption": "starttls",
+    "smtp_username_env": "SMTP_USERNAME",
+    "smtp_password_env": "SMTP_PASSWORD",
+    "subject_template": "New lead {{ lead.lead_id }}",
+    "text_template": "{{ lead }}",
+    "html_template": "",
+    "retries": 2
+  },
+  "lead_export": {
+    "enabled": false,
+    "formats": [
+      "xlsx",
+      "csv"
+    ],
+    "admin_commands": [
+      "/export_leads",
+      "/export_leads_today",
+      "/export_leads_week",
+      "/export_leads_month"
+    ],
+    "page_size": 500,
+    "include_sheets": [
+      "Contacts",
+      "Leads",
+      "Answers",
+      "Sources",
+      "CRM references",
+      "Export metadata"
+    ]
+  },
+  "flows": [
+    {
+      "id": "main",
+      "title": "Main menu",
+      "start_node_id": "start"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "command_trigger",
+      "title": "/start",
+      "position": {
+        "x": 60.0,
+        "y": 160.0
+      },
+      "settings": {
+        "command": "start",
+        "description": "Main menu",
+        "private_only": false
+      },
+      "required": true,
+      "group": ""
+    },
+    {
+      "id": "menu",
+      "type": "menu",
+      "title": "Main menu",
+      "position": {
+        "x": 390.0,
+        "y": 160.0
+      },
+      "settings": {
+        "text": "Select the section:",
+        "html": true,
+        "disable_preview": true,
+        "edit_navigation_message": true,
+        "buttons": [
+          {
+            "id": "about",
+            "text": "Company.",
+            "type": "transition",
+            "url": ""
+          },
+          {
+            "id": "contacts",
+            "text": "Contacts",
+            "type": "transition",
+            "url": ""
+          }
+        ],
+        "columns": 1,
+        "keyboard": "inline"
+      },
+      "required": true,
+      "group": ""
+    },
+    {
+      "id": "about",
+      "type": "finish",
+      "title": "Company.",
+      "position": {
+        "x": 780.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Add information about the company.",
+        "show_main_menu": true
+      },
+      "required": true,
+      "group": ""
+    },
+    {
+      "id": "contacts",
+      "type": "finish",
+      "title": "Contacts",
+      "position": {
+        "x": 780.0,
+        "y": 250.0
+      },
+      "settings": {
+        "text": "Add communication methods.",
+        "show_main_menu": true
+      },
+      "required": true,
+      "group": ""
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_next_menu",
+      "source": "start",
+      "source_port": "next",
+      "target": "menu",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_menu_about_about",
+      "source": "menu",
+      "source_port": "about",
+      "target": "about",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_menu_contacts_contacts",
+      "source": "menu",
+      "source_port": "contacts",
+      "target": "contacts",
+      "target_port": "in",
+      "label": ""
+    }
+  ],
+  "export": {
+    "cloudflare_worker_name": "simple-menu",
+    "docker_service_name": "simple-menu",
+    "context_limit": 1400,
+    "http_timeout_seconds": 15
+  },
+  "ui": {
+    "zoom": 1.0,
+    "center_x": 0.0,
+    "center_y": 0.0,
+    "grid": true,
+    "minimap": true
+  }
+}

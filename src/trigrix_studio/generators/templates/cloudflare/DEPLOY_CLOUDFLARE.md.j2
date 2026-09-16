@@ -1,0 +1,97 @@
+# Deploying {{ project.metadata.name }} to Cloudflare
+
+{% set enabled_channels = project.channels | selectattr("enabled") | list %}
+
+This archive contains one common Worker for selected channels: each incoming request is routed by its own webhook path. Separate copies of the channel code are not required.
+
+## 1. Selected channels
+
+{% for channel in enabled_channels %}
+### {{ channel.title }} (`{{ channel.type }}`)
+
+- webhook path: `{{ channel.webhook_path }}`
+- Account ID: `{{ channel.account_id }}`
+- secret ENV: `{{ channel.webhook_secret_env }}`
+{% if channel.type == "telegram" %}
+Create a bot through `@BotFather`, save the token to ENV `{{ channel.credentials.get("bot_token", "BOT_TOKEN") }}` and install the webhook helper script after deployment.
+{% elif channel.type in ["whatsapp", "instagram", "messenger"] %}
+In Meta for Developers, add this path to the public URL Worker, specify Verify Token from ENV `{{ channel.credentials.get("verify_token", "META_VERIFY_TOKEN") }}`, and sign message events.
+{% elif channel.type == "viber" %}
+In the Viber panel, specify the public URL Worker with this path and save the auth token to ENV `{{ channel.credentials.get("auth_token", "VIBER_AUTH_TOKEN") }}`. Viber is a commercial connector.
+{% else %}
+Follow the instructions of the selected CPaaS/enterprise- provider; only ENV- names are saved in the project.
+{% endif %}
+{% endfor %}
+
+{% if project.channels | selectattr("type", "equalto", "telegram") | selectattr("enabled") | list %}
+## 2. Yes bot (Telegram)
+
+1. Open Telegram and find `@BotFather`.
+2. Create a bot command `/newbot` and save the token.
+3. Set the name **{{ project.bot.display_name }}**.
+4. About: **{{ project.bot.about }}**.
+5. Description: **{{ project.bot.description }}**.
+6. In `/setcommands` state:
+{% for command in project.bot.commands %}
+   `{{ command.command }} - {{ command.description }}`
+{% endfor %}
+{% else %}
+## 2. True projects
+
+Telegram is not selected in this export. Configure credentials and webhook links from Section 1.
+{% endif %}
+
+## 3. Service team
+
+If the project sends requests, create a group, add a bot, issue the right to send messages and receive it Chat ID through helper `tools/check_bot.py` or a temporary diagnostic bot.
+
+## 4. Cloudflare Worker
+
+1. Install Node.js and Wrangler: `npm install -g wrangler`.
+2. Open Cloudflare Dashboard → Workers & Pages and sign in.
+3. Unpack the archive and open the terminal in this folder.
+4. Authorize: `wrangler login`.
+5. Add the secrets:
+{% for item in env_items if item.kind == "secret" %}
+   `wrangler secret put {{ item.name }}`
+{% endfor %}
+6. Add the usual Variables in the Worker settings:
+{% for item in env_items if item.kind == "normal" %}
+   `{{ item.name }}` — {{ item.description }}
+{% endfor %}
+7. Run `wrangler deploy` and copy URL Worker.
+
+The project does not require KV, D1, R2 or Durable Objects to execute the script. Firestore, if enabled, is called through official REST API.
+
+## 5. Webhook and
+
+{% if project.channels | selectattr("type", "equalto", "telegram") | selectattr("enabled") | list %}
+1. Set locally token ENV Telegram, `WEBHOOK_SECRET` and `WORKER_URL`.
+2. Do `python tools/set_webhook.py`.
+3. Do `python tools/check_webhook.py`.
+{% endif %}
+For Meta/Viber, register each path from Section 1 on one URL Worker. Make sure the request signatures and verification token match ENV.
+
+## 6. Validation
+
+Go through one script in each selected channel and check Worker Logs. Buttons, lists, and attachments are validated by a validator before export; unsupported features receive a fallback or warning.
+
+## 7. Cloudflare Free Email
+
+{% if project.email.enabled and project.email.mode == "cloudflare_free" %}
+1. `{{ project.email.sender_address }}` must be connected to Cloudflare DNS and Email Service.
+2. Confirm destination addresses: {{ project.email.verified_recipients | join(", ") }}.
+3. Binding `{{ project.email.binding_name }}` has already been added to `wrangler.jsonc` and is limited to confirmed addresses.
+4. Perform a local check without actually sending through `wrangler dev`. For real test sending, remote binding is already enabled – do not use addresses that are not intended for the test.
+
+This mode works on Workers Free without a payment method only for confirmed recipients.
+{% else %}
+Cloudflare Free Email is turned off. Configure it visually in TRIGRIX Studio; for arbitrary recipients, use Email API.
+{% endif %}
+
+## 8. CRM and Firebase
+
+- CRM tokens and Firebase credentials are specified only by commands `wrangler secret put ...` from the list above.
+- Check Base URL, pipeline/status and mapping before publication.
+- Firestore records only structured leads on stable `lead_id`; messages are not saved.
+- For `/export_leads*`, there must be an “Export leads” block with an administrative Telegram recipient.

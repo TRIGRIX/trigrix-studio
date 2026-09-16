@@ -1,0 +1,71 @@
+# Deploying {{ project.metadata.name }} to Docker
+
+{% set enabled_channels = project.channels | selectattr("enabled") | list %}
+
+The Docker archive contains one common runtime for selected channels. Telegram uses polling, other channels are accepted by one webhook server and differ in path.
+
+## Selected channels
+
+{% for channel in enabled_channels %}
+- **{{ channel.title }} (`{{ channel.type }}`)** — `{{ channel.webhook_path }}`, Account ID `{{ channel.account_id }}`, secret ENV `{{ channel.webhook_secret_env }}`.
+{% endfor %}
+
+{% if project.channels | selectattr("type", "equalto", "telegram") | selectattr("enabled") | list %}
+## Telegram
+
+1. Open Telegram and find `@BotFather`.
+2. Create a bot command `/newbot` and save the token.
+3. Set up the name, About and Description.
+4. In `/setcommands` state:
+{% for command in project.bot.commands %}
+   `{{ command.command }} - {{ command.description }}`
+{% endfor %}
+{% endif %}
+
+## Variables surroundings
+
+Copy `.env.example` into `.env` and complete:
+{% for item in env_items %}
+- `{{ item.name }}` - {{ item.description }}{% if item.kind == "secret" %}; secret, do not publish it {% endif %}.
+{% endfor %}
+
+## Docker CLI
+
+1. Install Docker Desktop or Docker Engine.
+2. Open the terminal in the project folder.
+3. Do `docker compose up -d --build`.
+4. Check `docker compose ps`.
+5. Look at the logs: `docker compose logs -f`.
+{% if project.channels | selectattr("type", "equalto", "telegram") | selectattr("enabled") | list %}
+6. Open the bot in Telegram and send `/start`.
+{% else %}
+6. Send a test message to one of the selected channels and check the logs.
+{% endif %}
+
+Ports are not required if only Telegram is selected. If any non-Telegram channel is enabled, publish `8080:8080`, configure public HTTPS reverse proxy and direct all paths from the list above to it.
+
+## Portainer
+
+1. Open Portainer and select Environment.
+2. Open **Stacks** → **Add stack**.
+3. Set the stack name and select the compose file download.
+4. Add the contents `compose.yaml`.
+5. Add the environment variables listed above.
+6. Press **Deploy the stack**.
+7. Open **Containers**, check status and Logs.
+
+{% if enabled_channels | selectattr("type", "ne", "telegram") | list %}
+## Other channels
+
+Only the official API is used. In Meta for Developers, set the public webhook URL, Verify Token and subscribe to post events. App Secret and access tokens are stored at `.env`; POST- requests are verified at `X-Hub-Signature-256`.
+{% endif %}
+
+## Email
+
+- SMTP works only in Docker/VPS: specify host, port, encryption and ENV login / password.
+- Email API is suitable for Amazon SES, SendGrid, Mailgun, Postmark and custom endpoint.
+- Mode Cloudflare Free is designed for Cloudflare Worker and is not used by Docker.
+
+## CRM, Firebase & export
+
+CRM token and Firebase service account/OAuth token are specified in `.env`, but are never added to the project file. Firestore only stores structured applications. Commands `/export_leads*` form XLSX/CSV in temporary memory and are available only Chat ID administrative recipient.

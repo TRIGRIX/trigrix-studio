@@ -1,0 +1,508 @@
+{{ cloudflare_guide }}
+
+const PROJECT = {{ ir_json }};
+const SETUP_UI = {{ setup_ui_json }};
+
+{% raw %}
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+const CONTEXT_PATTERN = /ctx:([A-Za-z0-9_.-]+)/;
+
+function html(value) {
+  return String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[ch]);
+}
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value) {
+  const raw = atob(value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4));
+  return Uint8Array.from(raw, char => char.charCodeAt(0));
+}
+
+async function transformBytes(bytes, kind) {
+  const stream = kind === "compress" ? new CompressionStream("deflate") : new DecompressionStream("deflate");
+  const writer = stream.writable.getWriter();
+  await writer.write(bytes);
+  await writer.close();
+  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+
+async function contextKey(token) {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`trigrix-context:${token}`));
+  return crypto.subtle.importKey("raw", digest, {name: "HMAC", hash: "SHA-256"}, false, ["sign"]);
+}
+
+async function encodeContext(data, token, limit) {
+  const packed = await transformBytes(encoder.encode(JSON.stringify({v: 1, ...data})), "compress");
+  const encoded = bytesToBase64Url(packed);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", await contextKey(token), encoder.encode(encoded))).subarray(0, 12);
+  const result = `${encoded}.${bytesToBase64Url(signature)}`;
+  if (result.length > limit) throw new Error("Stateless context is too large");
+  return result;
+}
+
+async function decodeContext(value, token, limit) {
+  if (!value || value.length > limit) throw new Error("Invalid context size");
+  const [encoded, signature, extra] = value.split(".");
+  if (!encoded || !signature || extra !== undefined) throw new Error("Invalid context format");
+  const expected = new Uint8Array(await crypto.subtle.sign("HMAC", await contextKey(token), encoder.encode(encoded))).subarray(0, 12);
+  const actual = base64UrlToBytes(signature);
+  if (actual.length !== expected.length || actual.some((item, index) => item !== expected[index])) throw new Error("Invalid context signature");
+  const result = JSON.parse(decoder.decode(await transformBytes(base64UrlToBytes(encoded), "decompress")));
+  if (result.v !== 1) throw new Error("Unsupported context version");
+  return result;
+}
+
+async function contextFromMessage(message, token, limit) {
+  const match = String(message?.text || message?.caption || "").match(CONTEXT_PATTERN);
+  return match ? decodeContext(match[1], token, limit) : {};
+}
+
+async function contextSuffix(context, token, limit) {
+  return `\n\n<span class="tg-spoiler">ctx:${await encodeContext(context, token, limit)}</span>`;
+}
+
+function lookup(project, context, path, env) {
+  if (path.startsWith("env.")) return env[path.slice(4)] ?? "";
+  let current = context;
+  for (const part of path.split(".")) {
+    if (current && typeof current === "object" && current._dict && current.id) {
+      current = (project.dictionaries?.[current._dict] || []).find(item => item.id === current.id) || {};
+    }
+    if (!current || typeof current !== "object") return "";
+    current = current[part] ?? "";
+  }
+  return current;
+}
+
+function render(text, context, env) {
+  return String(text ?? "").replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, path) => html(lookup(PROJECT, context, path, env)));
+}
+
+function baseContext(update) {
+  const message = update.message || update.callback_query?.message || {};
+  const user = update.callback_query?.from || message.from || {};
+  const language = String(user.language_code || update.locale || "en-US").replace("_", "-");
+  const localeMap = {en:"en-US", de:"de-DE", fr:"fr-FR", es:"es-ES", pt:"pt-BR", it:"it-IT", nl:"nl-NL", pl:"pl-PL", tr:"tr-TR", ru:"ru-RU"};
+  const now = new Date();
+  return {
+    p: PROJECT.project_id.slice(0, 6), n: 0, vars: {},
+    channel: update.channel || "telegram", account_id: update.account_id || "default", locale: localeMap[language.split("-")[0]] || language,
+    user: {id:user.id, first_name:user.first_name || "", last_name:user.last_name || "", full_name:[user.first_name,user.last_name].filter(Boolean).join(" "), username:user.username || ""},
+    chat: {id:message.chat?.id}, message: {id:message.message_id, text:message.text || ""},
+    date: now.toLocaleDateString("en-GB").replaceAll("/", "."), datetime: now.toISOString(),
+  };
+}
+
+function mergedContext(base, stored) {
+  const result = {...(stored || {})};
+  for (const [key, value] of Object.entries(base)) if (!new Set(["vars", "n"]).has(key)) result[key] = value;
+  result.vars ||= {};
+  result.n ||= 0;
+  return result;
+}
+
+function expanded(context) { return {...context, ...(context.vars || {})}; }
+function storeValue(context, name, value) { (context.vars ||= {})[name] = value; }
+function findRoute(node, port) { const value = node?.routes?.[port]; return value === undefined || value === null ? null : Number(value); }
+
+function validateAnswer(settings, message) {
+  const kind = settings.answer_type || "text";
+  const text = message.text || "";
+  if (["file","document","photo","video","any_media"].includes(kind)) {
+    const value = message.document || message.photo || message.video || message.audio || message.voice || message.animation;
+    return [Boolean(value), value];
+  }
+  if (settings.required && !String(text).trim()) return [false, text];
+  if (settings.min_length != null && text.length < Number(settings.min_length)) return [false, text];
+  if (settings.max_length != null && text.length > Number(settings.max_length)) return [false, text];
+  if (kind === "integer" && !/^[-+]?\d+$/.test(text)) return [false, text];
+  if (kind === "number" && !Number.isFinite(Number(text))) return [false, text];
+  if (kind === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(text)) return [false, text];
+  if (kind === "phone" && !/^[+\d][\d\s()\-]{5,30}$/.test(text)) return [false, text];
+  if (settings.pattern) { try { if (!(new RegExp(`^(?:${settings.pattern})$`)).test(text)) return [false, text]; } catch { return [false, text]; } }
+  return [true, text];
+}
+
+class TelegramTransport {
+  constructor(token) { this.base = `https://api.telegram.org/bot${token}/`; }
+  async call(method, data) {
+    const response = await fetch(this.base + method, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data)});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) throw new Error(`Telegram API ${method}: ${response.status} ${JSON.stringify(payload)}`);
+    return payload.result;
+  }
+  async send(chatId, text, keyboard=null, threadId=null) {
+    const data = {chat_id:chatId, text, parse_mode:"HTML", link_preview_options:{is_disabled:true}};
+    if (keyboard?.length) data.reply_markup = {inline_keyboard:keyboard};
+    if (threadId != null) data.message_thread_id = threadId;
+    return this.call("sendMessage", data);
+  }
+  async edit(chatId, messageId, text, keyboard=null) {
+    const data = {chat_id:chatId, message_id:messageId, text, parse_mode:"HTML", link_preview_options:{is_disabled:true}};
+    if (keyboard?.length) data.reply_markup = {inline_keyboard:keyboard};
+    try { return await this.call("editMessageText", data); } catch { return this.send(chatId, text, keyboard); }
+  }
+  async forceReply(chatId, text) { return this.call("sendMessage", {chat_id:chatId, text, parse_mode:"HTML", reply_markup:{force_reply:true, selective:true}, link_preview_options:{is_disabled:true}}); }
+  async answerCallback(id) { return this.call("answerCallbackQuery", {callback_query_id:id}); }
+  async forward(target, source, mode="forward", threadId=null) {
+    const data = {chat_id:target, from_chat_id:source.chat.id, message_id:source.message_id};
+    if (threadId != null) data.message_thread_id = threadId;
+    return this.call(mode === "copy" ? "copyMessage" : "forwardMessage", data);
+  }
+  async sendDocument(chatId, content, filename, caption="", threadId=null) {
+    const form = new FormData(); form.append("chat_id", String(chatId)); form.append("caption", caption);
+    if (threadId != null) form.append("message_thread_id", String(threadId));
+    form.append("document", new Blob([content]), filename);
+    const response = await fetch(this.base + "sendDocument", {method:"POST", body:form});
+    if (!response.ok) throw new Error(`Telegram API sendDocument: ${response.status}`);
+  }
+  async http(settings, context, env) {
+    const subst = value => String(value).replace(/\{\{\s*env\.([A-Z0-9_]+)\s*\}\}/g, (_m, key) => env[key] || "");
+    const headers = Object.fromEntries(Object.entries(settings.headers || {}).map(([key,value]) => [key, subst(value)]));
+    const response = await fetch(subst(settings.url), {method:settings.method || "GET", headers, body:settings.json_body == null ? undefined : JSON.stringify(settings.json_body)});
+    const text = await response.text();
+    try { return JSON.parse(text); } catch { return {status:response.status, text:text.slice(0,2000)}; }
+  }
+}
+
+function completeLead(context, settings, channel="telegram", accountId="default") {
+  const variables = context.vars || context;
+  const prefix = String(settings.answers_prefix || "answer_");
+  const user = context.user || {};
+  const leadId = variables[settings.lead_id_variable || "request_id"] || crypto.randomUUID();
+  return {
+    lead_id:String(leadId), created_at:new Date().toISOString(), channel, account_id:accountId,
+    user_id:String(user.id || ""), channel_user_id:`${channel}:${accountId}:${user.id || ""}`,
+    name:variables[settings.name_variable || "lead_name"] || "", phone:variables[settings.phone_variable || "lead_phone"] || "",
+    email:variables[settings.email_variable || "lead_email"] || "", country:variables[settings.country_variable || "lead_country"] || "",
+    answers:Object.fromEntries(Object.entries(variables).filter(([key]) => key.startsWith(prefix))), status:"new",
+    source:{chat_id:context.chat?.id, message_id:context.message?.id}, admin_message_id:"", crm_refs:{}, exported_at:null,
+  };
+}
+
+function nestedLookup(value, path) { return path.split(".").reduce((current, key) => current && typeof current === "object" ? current[key] : undefined, value); }
+
+function firestoreValue(item) {
+  if (item == null) return {nullValue:null};
+  if (typeof item === "boolean") return {booleanValue:item};
+  if (Number.isInteger(item)) return {integerValue:String(item)};
+  if (typeof item === "number") return {doubleValue:item};
+  if (Array.isArray(item)) return {arrayValue:{values:item.map(firestoreValue)}};
+  if (typeof item === "object") return {mapValue:{fields:Object.fromEntries(Object.entries(item).map(([k,v]) => [k,firestoreValue(v)]))}};
+  return {stringValue:String(item)};
+}
+
+function fromFirestore(item) {
+  if ("nullValue" in item) return null;
+  if ("booleanValue" in item) return item.booleanValue;
+  if ("integerValue" in item) return Number(item.integerValue);
+  if ("doubleValue" in item) return item.doubleValue;
+  if ("stringValue" in item) return item.stringValue;
+  if ("arrayValue" in item) return (item.arrayValue.values || []).map(fromFirestore);
+  if ("mapValue" in item) return Object.fromEntries(Object.entries(item.mapValue.fields || {}).map(([k,v]) => [k,fromFirestore(v)]));
+  return "";
+}
+
+function pemBytes(value) {
+  const body = value.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  return Uint8Array.from(atob(body), char => char.charCodeAt(0));
+}
+
+async function firebaseToken(settings, env) {
+  const raw = String(env[settings.credentials_env || "FIREBASE_SERVICE_ACCOUNT_JSON"] || "");
+  if (!raw) throw new Error("Firebase credentials Secret is empty");
+  let credentials;
+  try { credentials = JSON.parse(raw); } catch { return raw; }
+  if (credentials.access_token) return String(credentials.access_token);
+  if (!credentials.private_key || !credentials.client_email) throw new Error("Invalid Firebase service account JSON");
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = value => bytesToBase64Url(encoder.encode(JSON.stringify(value)));
+  const signingInput = `${b64({alg:"RS256",typ:"JWT"})}.${b64({iss:credentials.client_email,scope:"https://www.googleapis.com/auth/datastore",aud:credentials.token_uri || "https://oauth2.googleapis.com/token",iat:now,exp:now+3600})}`;
+  const key = await crypto.subtle.importKey("pkcs8", pemBytes(credentials.private_key), {name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"}, false, ["sign"]);
+  const signature = new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(signingInput)));
+  const body = new URLSearchParams({grant_type:"urn:ietf:params:oauth:grant-type:jwt-bearer", assertion:`${signingInput}.${bytesToBase64Url(signature)}`});
+  const response = await fetch(credentials.token_uri || "https://oauth2.googleapis.com/token", {method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`Google OAuth: ${JSON.stringify(payload)}`);
+  return payload.access_token;
+}
+
+class IntegrationRuntime {
+  constructor(transport, env) { this.transport = transport; this.env = env; }
+  async saveLead(lead) {
+    const settings = PROJECT.lead_storage || {};
+    if (!settings.enabled || settings.provider !== "firebase") return;
+    const token = await firebaseToken(settings, this.env);
+    const collection = String(settings.collection_path || "leads").replace(/^\/+|\/+$/g, "");
+    const url = `https://firestore.googleapis.com/v1/projects/${settings.project_id}/databases/${settings.database_id || "(default)"}/documents/${collection}/${encodeURIComponent(lead.lead_id)}`;
+    const fields = Object.fromEntries(Object.entries(lead).map(([key,value]) => [key,firestoreValue(value)]));
+    await this.transport.http({method:"PATCH",url,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},json_body:{fields}}, {}, this.env);
+  }
+  async notifyEmail(lead) {
+    const settings = PROJECT.email || {};
+    if (!settings.enabled) return;
+    const recipients = settings.recipients || [];
+    const subject = render(settings.subject_template || "New lead", {lead}, this.env);
+    const text = render(settings.text_template || "{{ lead }}", {lead}, this.env);
+    if (settings.mode === "cloudflare_free") {
+      const binding = this.env[settings.binding_name || "EMAIL"];
+      if (!binding?.send) throw new Error("Cloudflare Send Email binding is not configured");
+      await binding.send({to:recipients, from:settings.sender_address || "", subject, text});
+      return;
+    }
+    if (settings.mode === "smtp") throw new Error("SMTP is available only in Docker export");
+    const token = this.env[settings.api_key_env || "EMAIL_API_KEY"] || "";
+    await this.transport.http({method:"POST",url:settings.api_url,headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},json_body:{from:settings.sender_address,to:recipients,subject,text,html:settings.html_template || ""}}, {}, this.env);
+  }
+  async pushCrm(crmId, lead) {
+    const integration = (PROJECT.crm_integrations || []).find(item => item.id === crmId && item.enabled);
+    if (!integration) throw new Error(`CRM integration ${crmId} is unavailable`);
+    const token = this.env[integration.auth_env || "CRM_API_TOKEN"] || "";
+    const base = String(integration.base_url || integration.settings?.base_url || "").replace(/\/+$/, "");
+    if (!base) throw new Error("CRM base URL is not configured");
+    const mapping = integration.field_mapping || {name:"name",email:"email",phone:"phone",lead_id:"external_id"};
+    let body = Object.fromEntries(Object.entries(mapping).map(([source,target]) => [target,nestedLookup(lead,source)]).filter(([_k,v]) => v != null && v !== ""));
+    if (integration.provider === "hubspot") body = {properties:body};
+    else if (integration.provider === "zoho") body = {data:[body]};
+    else if (integration.provider === "freshsales") body = {contact:body};
+    else if (integration.provider === "frappe") body = {data:body};
+    else if (integration.provider === "suitecrm") body = {data:{type:"Leads",attributes:body}};
+    const header = integration.settings?.auth_header || "Authorization";
+    const prefix = integration.settings?.auth_prefix ?? "Bearer ";
+    return this.transport.http({method:"POST",url:base+(integration.settings?.create_path || ""),headers:{[header]:`${prefix}${token}`,"Content-Type":"application/json"},json_body:body}, {}, this.env);
+  }
+  async exportLeads(settings, recipient) {
+    const storage = PROJECT.lead_storage || {};
+    if (!storage.enabled || storage.provider !== "firebase") throw new Error("Lead export requires Firebase storage");
+    const token = await firebaseToken(storage, this.env);
+    const collection = String(storage.collection_path || "leads").replace(/^\/+|\/+$/g, "");
+    const base = `https://firestore.googleapis.com/v1/projects/${storage.project_id}/databases/${storage.database_id || "(default)"}/documents/${collection}`;
+    const leads = []; let pageToken = "";
+    do {
+      const response = await this.transport.http({method:"GET",url:`${base}?pageSize=${PROJECT.lead_export?.page_size || 500}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`,headers:{Authorization:`Bearer ${token}`}}, {}, this.env);
+      for (const document of response.documents || []) leads.push(Object.fromEntries(Object.entries(document.fields || {}).map(([k,v]) => [k,fromFirestore(v)])));
+      pageToken = response.nextPageToken || "";
+    } while (pageToken);
+    const keys = [...new Set(leads.flatMap(item => Object.keys(item)))];
+    const quote = value => `"${String(typeof value === "object" ? JSON.stringify(value) : value ?? "").replaceAll('"','""')}"`;
+    const csv = "\uFEFF" + [keys.map(quote).join(","), ...leads.map(item => keys.map(key => quote(item[key])).join(","))].join("\r\n");
+    await this.transport.sendDocument(this.env[recipient.chat_id_env], encoder.encode(csv), `trigrix-leads-${Date.now()}.csv`, "TRIGRIX Studio lead export", recipient.thread_id);
+  }
+}
+
+class FlowRuntime {
+  constructor(transport, env) {
+    this.transport = transport; this.env = env;
+    const telegramToken = (PROJECT.channels || []).filter(item => item.enabled && item.type === "telegram").map(item => env[item.credentials?.bot_token || "BOT_TOKEN"]).find(Boolean);
+    this.token = String(telegramToken || env.CONTEXT_SECRET || (PROJECT.channels || []).map(item => env[item.webhook_secret_env]).find(Boolean) || "");
+    if (!this.token) throw new Error("BOT_TOKEN or CONTEXT_SECRET Secret is required");
+    this.limit = Number(PROJECT.export?.context_limit || 1400);
+    this.nodes = Object.fromEntries(Object.entries(PROJECT.nodes).map(([key,value]) => [Number(key),value]));
+    this.integrations = new IntegrationRuntime(transport, env);
+  }
+  text(key, context) {
+    const localization = PROJECT.localization || {};
+    const locale = context.locale || localization.default_locale || "en-US";
+    const texts = localization.standard_texts || {};
+    return (texts[locale] || texts[localization.fallback_locale || "en-US"] || texts["en-US"] || {})[key] || key;
+  }
+  async handle(update) {
+    const base = baseContext(update);
+    const callback = update.callback_query;
+    if (callback) {
+      await this.transport.answerCallback(callback.id);
+      const message = callback.message || {};
+      let context;
+      try { context = mergedContext(base, await contextFromMessage(message, this.token, this.limit)); } catch { context = base; }
+      const data = callback.data || "";
+      if (data === "home") return this.startCommand("/start", context, message, update);
+      const [rawNode, port, ...value] = data.split(":");
+      const node = this.nodes[Number(rawNode)];
+      if (!node) return this.transport.send(base.chat.id, this.text("expired_button", base), [[{text:this.text("main_menu",base),callback_data:"home"}]]);
+      let target;
+      if (node.type === "dictionary_select" && port === "d" && value.length) {
+        storeValue(context, node.settings.variable || "selection", {_dict:node.settings.dictionary,id:value[0]}); target = findRoute(node,"next");
+      } else target = findRoute(node,port);
+      return this.run(target, context, message, update, message.message_id);
+    }
+    const message = update.message || {};
+    const text = message.text || "";
+    if (text.startsWith("/")) {
+      const command = text.split(/\s+/)[0].toLowerCase();
+      if ((PROJECT.lead_export?.admin_commands || []).includes(command)) {
+        const node = Object.values(this.nodes).find(item => item.type === "export_leads");
+        if (node?.settings?.recipient) {
+          const recipient = PROJECT.recipients[node.settings.recipient];
+          if (String(base.chat.id) !== String(this.env[recipient.chat_id_env] || "")) return this.transport.send(base.chat.id,this.text("admin_only",base));
+          await this.integrations.exportLeads({...node.settings,period:{"/export_leads_today":"today","/export_leads_week":"week","/export_leads_month":"month"}[command] || "all"},recipient); return;
+        }
+      }
+      return this.startCommand(command, base, message, update);
+    }
+    const reply = message.reply_to_message || {};
+    let stored = {};
+    try { if (reply.text || reply.caption) stored = await contextFromMessage(reply,this.token,this.limit); } catch {}
+    if (Object.keys(stored).length) {
+      const context = mergedContext(base,stored); const node = this.nodes[Number(context.n || 0)];
+      if (node && ["question","receive_file","collect_lead_field"].includes(node.type)) {
+        const [valid,value] = validateAnswer(node.settings,message);
+        if (!valid) return this.prompt(node,context,base.chat.id,node.settings.invalid_message);
+        if (node.settings.persist !== false) storeValue(context,node.settings.variable || "answer",value);
+        context.message = {id:message.message_id,text};
+        return this.run(findRoute(node,"next"),context,message,update);
+      }
+    }
+    for (const [triggerKey,triggerId] of Object.entries(PROJECT.triggers || {})) {
+      if (!triggerKey.startsWith("text:")) continue;
+      const trigger = this.nodes[Number(triggerId)], settings = trigger.settings, pattern = String(settings.pattern || ""), mode = settings.mode || "exact";
+      let matched = mode === "any" || (mode === "exact" && text === pattern) || (mode === "contains" && text.includes(pattern)) || (mode === "starts_with" && text.startsWith(pattern));
+      if (mode === "regex") { try { matched = new RegExp(`^(?:${pattern})$`).test(text.slice(0,4096)); } catch { matched = false; } }
+      if (matched) return this.run(findRoute(trigger,"next"),base,message,update);
+    }
+    return this.transport.send(base.chat.id,this.text("start_hint",base),[[{text:this.text("main_menu",base),callback_data:"home"}]]);
+  }
+  async startCommand(command,context,message,update) {
+    const trigger = PROJECT.triggers[command];
+    if (trigger == null) return this.transport.send(context.chat.id,this.text("unknown_command",context));
+    return this.run(findRoute(this.nodes[Number(trigger)],"next"),context,message,update);
+  }
+  async run(nodeId,context,sourceMessage,update,editMessageId=null) {
+    for (let step=0; step<100; step++) {
+      if (nodeId == null) return;
+      const node = this.nodes[nodeId]; if (!node) throw new Error(`Missing node ${nodeId}`);
+      context.n = nodeId; const kind=node.type, settings=node.settings || {}, view=expanded(context), chatId=context.chat.id;
+      if (["command_trigger","text_trigger","back"].includes(kind)) { nodeId=findRoute(node,"next"); continue; }
+      if (kind === "message") { await this.transport.send(chatId,render(settings.text || "",view,this.env)); nodeId=findRoute(node,"next"); editMessageId=null; continue; }
+      if (kind === "menu") {
+        const buttons=(settings.buttons || []).map(button => button.type === "url" ? {text:button.text,url:render(button.url || "",view,this.env)} : {text:button.text,callback_data:`${nodeId}:${button.id}`});
+        const columns=Number(settings.columns || 1), keyboard=[]; for(let i=0;i<buttons.length;i+=columns) keyboard.push(buttons.slice(i,i+columns));
+        const text=render(settings.text || "",view,this.env)+await contextSuffix(context,this.token,this.limit);
+        return settings.edit_navigation_message && editMessageId ? this.transport.edit(chatId,editMessageId,text,keyboard) : this.transport.send(chatId,text,keyboard);
+      }
+      if (kind === "dictionary_select") {
+        const records=PROJECT.dictionaries[settings.dictionary] || [];
+        const buttons=records.map(record => ({text:String(record[settings.title_field || "title"] || record.id),callback_data:`${nodeId}:d:${record.id}`}));
+        const columns=Number(settings.columns || 1),keyboard=[];for(let i=0;i<buttons.length;i+=columns)keyboard.push(buttons.slice(i,i+columns));
+        const text=render(settings.text || "",view,this.env)+await contextSuffix(context,this.token,this.limit);
+        return editMessageId ? this.transport.edit(chatId,editMessageId,text,keyboard) : this.transport.send(chatId,text,keyboard);
+      }
+      if (["question","receive_file","collect_lead_field"].includes(kind)) return this.prompt(node,context,chatId);
+      if (kind === "set_variable") { const value=settings.value ?? ""; storeValue(context,settings.name || "variable",typeof value === "string" ? render(value,view,this.env) : value); nodeId=findRoute(node,"next"); continue; }
+      if (kind === "request_id") { const alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"; let value=`${settings.prefix || "REQ"}-`; for(let i=0;i<Number(settings.random_length || 6);i++)value+=alphabet[Math.floor(Math.random()*alphabet.length)]; storeValue(context,settings.variable || "request_id",value); nodeId=findRoute(node,"next"); continue; }
+      if (kind === "complete_lead") { storeValue(context,settings.output_variable || "lead",completeLead(context,settings,context.channel,context.account_id)); nodeId=findRoute(node,"next"); continue; }
+      if (kind === "save_lead") { try { await this.integrations.saveLead(context.vars?.[settings.lead_variable || "lead"] || {}); } catch(error) { if(settings.continue_on_error===false)throw error; } nodeId=findRoute(node,"next"); continue; }
+      if (kind === "notify_email") { try { await this.integrations.notifyEmail(context.vars?.[settings.lead_variable || "lead"] || {}); } catch(error) { if(settings.continue_on_error===false)throw error; } nodeId=findRoute(node,"next"); continue; }
+      if (kind === "push_crm") { try { await this.integrations.pushCrm(settings.crm_id,context.vars?.[settings.lead_variable || "lead"] || {}); } catch(error) { if(settings.continue_on_error===false)throw error; } nodeId=findRoute(node,"next"); continue; }
+      if (kind === "switch") { const path=String(settings.value || "").replaceAll("{{","").replaceAll("}}","").trim(); nodeId=findRoute(node,String(lookup(PROJECT,view,path,this.env))) ?? findRoute(node,"default"); continue; }
+      if (kind === "condition") {
+        const left=lookup(PROJECT,view,settings.left || "",this.env),right=settings.right,op=settings.operator;
+        const set=value => value!=null && value!=="" && (!Array.isArray(value)||value.length>0) && (typeof value!=="object"||Array.isArray(value)||Object.keys(value).length>0);
+        const checks={equals:left===right,not_equals:left!==right,contains:String(left).includes(String(right)),not_contains:!String(left).includes(String(right)),starts_with:String(left).startsWith(String(right)),is_set:set(left),not_set:!set(left),greater:Number(left)>Number(right),less:Number(left)<Number(right)};
+        nodeId=findRoute(node,checks[op]?"true":"false");continue;
+      }
+      if (["notify","card"].includes(kind)) { const recipient=PROJECT.recipients[settings.recipient]; let text=render(settings.text || "",view,this.env); if(kind==="card"&&settings.title)text=`<b>${render(settings.title,view,this.env)}</b>\n\n${text}`; await this.transport.send(this.env[recipient.chat_id_env],text,null,recipient.thread_id); nodeId=findRoute(node,"next");continue; }
+      if (kind === "send_admin_summary") { const recipient=PROJECT.recipients[settings.recipient],lead=context.vars?.[settings.lead_variable||"lead"]||{}; let text=render(settings.template||"{{ lead }}",{lead},this.env);if(settings.title)text=`<b>${html(settings.title)}</b>\n\n${text}`;await this.transport.send(this.env[recipient.chat_id_env],text,null,recipient.thread_id);nodeId=findRoute(node,"next");continue; }
+      if (kind === "export_leads") { const recipient=PROJECT.recipients[settings.recipient];await this.integrations.exportLeads(settings,recipient);nodeId=findRoute(node,"next");continue; }
+      if (kind === "forward") { const recipient=PROJECT.recipients[settings.recipient];await this.transport.forward(this.env[recipient.chat_id_env],sourceMessage,settings.mode||"forward",recipient.thread_id);nodeId=findRoute(node,"next");continue; }
+      if (kind === "http_request") { storeValue(context,settings.variable||"response",await this.transport.http(settings,view,this.env));nodeId=findRoute(node,"next");continue; }
+      if (kind === "finish") { const keyboard=settings.show_main_menu!==false?[[{text:this.text("main_menu",context),callback_data:"home"}]]:null;return this.transport.send(chatId,render(settings.text||this.text("completed",context),view,this.env),keyboard); }
+      throw new Error(`Unsupported block: ${kind}`);
+    }
+    throw new Error("Automatic transition limit exceeded");
+  }
+  async prompt(node,context,chatId,override=null) { const settings=node.settings||{}; const text=render(override||settings.text||"Enter your answer",expanded(context),this.env)+await contextSuffix(context,this.token,this.limit); return this.transport.forceReply(chatId,text); }
+}
+
+async function hmacHex(secret, raw) {
+  const key=await crypto.subtle.importKey("raw",encoder.encode(secret),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  return [...new Uint8Array(await crypto.subtle.sign("HMAC",key,encoder.encode(raw)))].map(byte=>byte.toString(16).padStart(2,"0")).join("");
+}
+
+async function verifyChannelSignature(kind, raw, secret, signature) {
+  if (!secret || !signature) return false;
+  const expected=await hmacHex(secret,raw);
+  return kind === "viber" ? signature === expected : signature === `sha256=${expected}`;
+}
+
+function normalizeChannel(kind,payload,accountId) {
+  if(kind==="whatsapp") { const value=payload.entry?.[0]?.changes?.[0]?.value||{},message=value.messages?.[0];if(!message)return null;const sender=String(message.from||""),reply=message.interactive?.button_reply||message.interactive?.list_reply||{},text=message.text?.body||reply.title||"",base={message_id:message.id,date:Number(message.timestamp||0),chat:{id:sender},from:{id:sender},text};const result={message:base,channel:kind,account_id:accountId};if(reply.id)result.callback_query={id:message.id,from:{id:sender},message:base,data:reply.id};return result; }
+  if(["instagram","messenger"].includes(kind)) { const event=payload.entry?.[0]?.messaging?.[0];if(!event)return null;const sender=String(event.sender?.id||""),message=event.message||{},postback=event.postback||{},base={message_id:message.mid||"",date:Number(event.timestamp||0)/1000,chat:{id:sender},from:{id:sender},text:message.text||postback.title||""},result={message:base,channel:kind,account_id:accountId};if(postback.payload)result.callback_query={id:message.mid||"postback",from:{id:sender},message:base,data:postback.payload};return result; }
+  if(kind==="viber"&&payload.event==="message") { const sender=String(payload.sender?.id||""),message=payload.message||{};return {message:{message_id:String(payload.message_token||""),date:Number(payload.timestamp||0)/1000,chat:{id:sender},from:{id:sender,first_name:payload.sender?.name||""},text:message.text||""},channel:kind,account_id:accountId}; }
+  return null;
+}
+
+class GraphTransport {
+  constructor(channel,env){this.channel=channel;this.env=env;this.kind=channel.type;const c=channel.credentials||{};this.token=String(env[c.access_token||c.auth_token]||"");this.account=String(channel.account_id||"");}
+  async request(url,data,headers={}){const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(data)});if(!response.ok)throw new Error(`${this.kind} API: ${response.status} ${await response.text()}`);return response.json().catch(()=>({}));}
+  async send(chatId,text,keyboard=null){
+    if(this.kind==="viber"){const buttons=(keyboard||[]).flat().slice(0,12),data={receiver:String(chatId),type:"text",text:text.slice(0,7000)};if(buttons.length)data.keyboard={Type:"keyboard",Buttons:buttons.map(item=>({ActionType:item.url?"open-url":"reply",ActionBody:item.url||item.callback_data||"",Text:(item.text||"").slice(0,26),TextSize:"regular"}))};return this.request("https://chatapi.viber.com/pa/send_message",data,{"X-Viber-Auth-Token":this.token});}
+    if(this.kind==="whatsapp"){let data={messaging_product:"whatsapp",to:String(chatId),type:"text",text:{body:text.slice(0,4096)}};const buttons=(keyboard||[]).flat().filter(item=>item.callback_data).slice(0,3);if(buttons.length)data={messaging_product:"whatsapp",to:String(chatId),type:"interactive",interactive:{type:"button",body:{text:text.slice(0,1024)},action:{buttons:buttons.map(item=>({type:"reply",reply:{id:item.callback_data,title:item.text.slice(0,20)}}))}}};return this.request(`https://graph.facebook.com/v23.0/${this.account}/messages`,data,{Authorization:`Bearer ${this.token}`});}
+    const buttons=(keyboard||[]).flat().slice(0,3);let message={text:text.slice(0,2000)};if(buttons.length)message={attachment:{type:"template",payload:{template_type:"button",text:text.slice(0,640),buttons:buttons.map(item=>item.url?{type:"web_url",url:item.url,title:item.text.slice(0,20)}:{type:"postback",payload:item.callback_data||"",title:item.text.slice(0,20)})}}};return this.request(`https://graph.facebook.com/v23.0/me/messages?access_token=${encodeURIComponent(this.token)}`,{recipient:{id:String(chatId)},message});
+  }
+  async edit(chatId,_messageId,text,keyboard){return this.send(chatId,text,keyboard);} async forceReply(chatId,text){return this.send(chatId,text);} async answerCallback(){}
+  async forward(target,source){return this.send(target,source.text||"Forwarded message");} async sendDocument(){throw new Error("Document export requires Telegram");}
+  async http(settings,context,env){return new TelegramTransport("").http(settings,context,env);}
+}
+
+function setupPage(result="",status=200) {
+  const output=result?`<h2>${html(SETUP_UI.result)}</h2><pre>${html(result)}</pre>`:"";
+  return new Response(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${html(SETUP_UI.title)}</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:0 20px;color:#172033}form{display:grid;gap:12px;margin:20px 0}input,button{font:inherit;padding:12px;border-radius:8px;border:1px solid #9aa4b2}button{cursor:pointer;background:#eef2ff}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f8;padding:16px;border-radius:8px}</style></head><body><h1>${html(SETUP_UI.title)}</h1><p>${html(SETUP_UI.safe)}</p><form method="post"><label>${html(SETUP_UI.secret)}<input type="password" name="secret" autocomplete="off" required></label><button name="action" value="register">${html(SETUP_UI.register)}</button><button name="action" value="check">${html(SETUP_UI.check)}</button></form>${output}</body></html>`,{status,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Frame-Options":"DENY","Referrer-Policy":"no-referrer"}});
+}
+
+async function telegramSetup(request,env,url) {
+  if(request.method==="GET")return setupPage();
+  if(request.method!=="POST")return new Response("Method not allowed",{status:405});
+  const form=await request.formData();
+  if(!env.SETUP_SECRET||String(form.get("secret")||"")!==String(env.SETUP_SECRET))return setupPage(SETUP_UI.forbidden,403);
+  const channel=(PROJECT.channels||[]).find(item=>item.enabled&&item.type==="telegram");
+  if(!channel)return setupPage("Telegram channel is disabled",400);
+  const tokenName=channel.credentials?.bot_token||"BOT_TOKEN",secretName=channel.webhook_secret_env||"WEBHOOK_SECRET";
+  const token=String(env[tokenName]||""),webhookSecret=String(env[secretName]||"");
+  if(!token||!webhookSecret)return setupPage(`${SETUP_UI.missing} (${tokenName}, ${secretName})`,400);
+  if(!/^[A-Za-z0-9_-]{1,256}$/.test(webhookSecret))return setupPage(SETUP_UI.invalid_webhook_secret,400);
+  const action=String(form.get("action")||"register"),method=action==="check"?"getWebhookInfo":"setWebhook";
+  const data=method==="setWebhook"?{url:`${url.origin}${channel.webhook_path}`,secret_token:webhookSecret,allowed_updates:PROJECT.bot.allowed_updates||["message","callback_query"],drop_pending_updates:false}:{};
+  const response=await fetch(`https://api.telegram.org/bot${token}/${method}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+  const payload=await response.json().catch(()=>({ok:false,description:`HTTP ${response.status}`}));
+  return setupPage(JSON.stringify(payload,null,2),payload.ok?200:400);
+}
+
+export default {
+  async fetch(request,env) {
+    const url=new URL(request.url),path=url.pathname;
+    if(path==="/setup")return telegramSetup(request,env,url);
+    const channel=(PROJECT.channels||[]).find(item=>item.enabled&&item.webhook_path===path);
+    if(request.method==="GET") {
+      if(channel&&["whatsapp","instagram","messenger"].includes(channel.type)){
+        const tokenName=channel.credentials?.verify_token||"META_VERIFY_TOKEN";
+        if(url.searchParams.get("hub.mode")==="subscribe"&&url.searchParams.get("hub.verify_token")===String(env[tokenName]||""))return new Response(url.searchParams.get("hub.challenge")||"");
+        return new Response("Forbidden",{status:403});
+      }
+      return new Response(`${PROJECT.metadata.name}: OK`,{headers:{"Content-Type":"text/plain; charset=utf-8"}});
+    }
+    if(request.method!=="POST"||!channel)return new Response("Not found",{status:404});
+    try {
+      const raw=await request.text(),kind=channel.type;
+      let update,transport;
+      if(kind==="telegram"){
+        const secret=String(env[channel.webhook_secret_env||"WEBHOOK_SECRET"]||""),received=request.headers.get("X-Telegram-Bot-Api-Secret-Token");
+        if(!secret||received!==secret)return new Response("Forbidden",{status:403});
+        update=JSON.parse(raw);const tokenName=channel.credentials?.bot_token||"BOT_TOKEN";transport=new TelegramTransport(env[tokenName]);
+      }else{
+        const secret=String(env[channel.webhook_secret_env||"META_APP_SECRET"]||""),signature=request.headers.get(kind==="viber"?"X-Viber-Content-Signature":"X-Hub-Signature-256")||"";
+        if(!await verifyChannelSignature(kind,raw,secret,signature))return new Response("Forbidden",{status:403});
+        update=normalizeChannel(kind,JSON.parse(raw),channel.account_id||"default");if(!update)return new Response("OK");transport=new GraphTransport(channel,env);
+      }
+      await new FlowRuntime(transport,env).handle(update);
+      return new Response("OK");
+    }catch(error){console.error("Webhook error",error?.stack||String(error));return new Response("OK");}
+  },
+};
+{% endraw %}

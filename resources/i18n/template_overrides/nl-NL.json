@@ -1,0 +1,17 @@
+{
+  "First response": "Eerste antwoord",
+  "Configure the bot’s first response.": "Stel het eerste antwoord van de bot in.",
+  "Your bot name": "Naam van uw bot",
+  "Company assistant": "Bedrijfsassistent",
+  "Empty multichannel project": "Leeg multichannelproject",
+  "Telegram bot token": "Telegram-bottoken",
+  "Webhook verification secret": "Webhook-verificatiegeheim",
+  "Enter your response": "Voer uw antwoord in",
+  "Select an option:": "Selecteer een optie:",
+  "Name": "Naam.",
+  "Phone": "Telefoon.",
+  "Request summary": "Kaart van circulatie",
+  "NEW REQUEST": "NIEUWE CALLING",
+  "ID: {{ request_id }}\nName: {{ name }}\nPhone: {{ phone }}\nTelegram: @{{ user.username }}": "Nr.: {{ request_id }} \n Naam: {{ name }} \n Telefoon: {{ phone }} \n Telegram: @ {{ user.username }}",
+  "ID: {{ request_id }}\nService: {{ service.title }}\nName: {{ client_name }}\nContact: {{ client_contact }}\nRequest: {{ details }}\nTelegram: @{{ user.username }}\nTelegram ID: {{ user.id }}": "Nee: {{ request_id }} \n Richting: {{ service.title }} {{ client_name }} \n Contact: {{ client_contact }} \n Taak: {{ details }} \n Telegram: @ {{ user.username }} \n Telegram ID: {{ user.id }}"
+}

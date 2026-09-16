@@ -1,0 +1,598 @@
+{
+  "format": "trigrix-studio",
+  "schema_version": 2,
+  "metadata": {
+    "project_id": "f6583c3d4009",
+    "name": "Repair of premises",
+    "description": "Calculation of repairs",
+    "author": "",
+    "created_at": "2026-09-14T21:29:21.133519+00:00",
+    "modified_at": "2026-09-14T21:29:21.134817+00:00",
+    "template": "renovation",
+    "product": "TRIGRIX Studio"
+  },
+  "bot": {
+    "display_name": "Your bot name",
+    "username": "",
+    "about": "Company assistant",
+    "description": "Calculation of repairs",
+    "parse_mode": "HTML",
+    "allowed_updates": [
+      "message",
+      "callback_query"
+    ],
+    "commands": [
+      {
+        "command": "start",
+        "description": "Main menu"
+      }
+    ]
+  },
+  "variables": [
+    {
+      "name": "service",
+      "type": "dictionary_reference",
+      "persistence": "context"
+    },
+    {
+      "name": "client_name",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 100
+    },
+    {
+      "name": "client_contact",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 120
+    },
+    {
+      "name": "details",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 1000
+    },
+    {
+      "name": "request_id",
+      "type": "string",
+      "persistence": "context",
+      "max_length": 24
+    }
+  ],
+  "environment": [
+    {
+      "name": "BOT_TOKEN",
+      "description": "Telegram bot token",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare",
+        "docker"
+      ]
+    },
+    {
+      "name": "WEBHOOK_SECRET",
+      "description": "Webhook verification secret",
+      "kind": "secret",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare"
+      ]
+    },
+    {
+      "name": "ADMIN_CHAT_ID",
+      "description": "Chat ID for new applications",
+      "kind": "normal",
+      "required": true,
+      "example": "",
+      "platforms": [
+        "cloudflare",
+        "docker"
+      ]
+    }
+  ],
+  "dictionaries": [
+    {
+      "name": "SERVICES",
+      "title": "Services and destinations",
+      "records": [
+        {
+          "id": "01",
+          "title": "Cosmetic repair",
+          "fields": {}
+        },
+        {
+          "id": "02",
+          "title": "Major repairs",
+          "fields": {}
+        },
+        {
+          "id": "03",
+          "title": "New construction",
+          "fields": {}
+        },
+        {
+          "id": "04",
+          "title": "Office",
+          "fields": {}
+        },
+        {
+          "id": "05",
+          "title": "sunuzel",
+          "fields": {}
+        },
+        {
+          "id": "06",
+          "title": "Separate work",
+          "fields": {}
+        }
+      ]
+    }
+  ],
+  "contacts": [],
+  "recipients": [
+    {
+      "id": "requests",
+      "title": "New appeals",
+      "chat_id_env": "ADMIN_CHAT_ID"
+    }
+  ],
+  "channels": [
+    {
+      "id": "telegram_default",
+      "type": "telegram",
+      "title": "Telegram",
+      "enabled": true,
+      "account_id": "default",
+      "credentials": {
+        "bot_token": "BOT_TOKEN"
+      },
+      "webhook_path": "/webhook/telegram",
+      "webhook_secret_env": "WEBHOOK_SECRET",
+      "settings": {
+        "admin_chat_id_env": "ADMIN_CHAT_ID",
+        "admin_thread_id": null
+      }
+    },
+    {
+      "id": "whatsapp_default",
+      "type": "whatsapp",
+      "title": "WhatsApp Business",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "WHATSAPP_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/whatsapp",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "instagram_default",
+      "type": "instagram",
+      "title": "Instagram Messaging",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "INSTAGRAM_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/instagram",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "messenger_default",
+      "type": "messenger",
+      "title": "Facebook Messenger",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "access_token": "MESSENGER_PAGE_TOKEN",
+        "verify_token": "META_VERIFY_TOKEN"
+      },
+      "webhook_path": "/webhook/messenger",
+      "webhook_secret_env": "META_APP_SECRET",
+      "settings": {}
+    },
+    {
+      "id": "viber_default",
+      "type": "viber",
+      "title": "Viber (commercial)",
+      "enabled": false,
+      "account_id": "default",
+      "credentials": {
+        "auth_token": "VIBER_AUTH_TOKEN"
+      },
+      "webhook_path": "/webhook/viber",
+      "webhook_secret_env": "VIBER_AUTH_TOKEN",
+      "settings": {}
+    }
+  ],
+  "localization": {
+    "default_locale": "en-US",
+    "fallback_locale": "en-US",
+    "enabled_locales": [
+      "en-US",
+      "de-DE",
+      "fr-FR",
+      "es-ES",
+      "pt-BR",
+      "it-IT",
+      "nl-NL",
+      "pl-PL",
+      "tr-TR",
+      "ru-RU"
+    ],
+    "bot_texts": {}
+  },
+  "lead_storage": {
+    "enabled": false,
+    "provider": "none",
+    "project_id": "",
+    "database_id": "(default)",
+    "collection_path": "leads",
+    "credentials_env": "FIREBASE_SERVICE_ACCOUNT_JSON",
+    "mode": "leads",
+    "allowed_fields": []
+  },
+  "notifications": {
+    "admin_summary": true,
+    "email": false,
+    "crm": false,
+    "firebase": false,
+    "continue_on_error": true
+  },
+  "crm_integrations": [],
+  "email": {
+    "enabled": false,
+    "mode": "cloudflare_free",
+    "provider": "cloudflare",
+    "sender_name": "TRIGRIX Bot",
+    "sender_address": "",
+    "recipients": [],
+    "verified_recipients": [],
+    "binding_name": "EMAIL",
+    "api_url": "",
+    "api_key_env": "EMAIL_API_KEY",
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_encryption": "starttls",
+    "smtp_username_env": "SMTP_USERNAME",
+    "smtp_password_env": "SMTP_PASSWORD",
+    "subject_template": "New lead {{ lead.lead_id }}",
+    "text_template": "{{ lead }}",
+    "html_template": "",
+    "retries": 2
+  },
+  "lead_export": {
+    "enabled": false,
+    "formats": [
+      "xlsx",
+      "csv"
+    ],
+    "admin_commands": [
+      "/export_leads",
+      "/export_leads_today",
+      "/export_leads_week",
+      "/export_leads_month"
+    ],
+    "page_size": 500,
+    "include_sheets": [
+      "Contacts",
+      "Leads",
+      "Answers",
+      "Sources",
+      "CRM references",
+      "Export metadata"
+    ]
+  },
+  "flows": [
+    {
+      "id": "main",
+      "title": "Reception of appeal",
+      "start_node_id": "start"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "command_trigger",
+      "title": "/start",
+      "position": {
+        "x": 40.0,
+        "y": 180.0
+      },
+      "settings": {
+        "command": "start",
+        "description": "Main menu",
+        "private_only": false
+      },
+      "required": true,
+      "group": "Start"
+    },
+    {
+      "id": "main",
+      "type": "menu",
+      "title": "Main menu",
+      "position": {
+        "x": 390.0,
+        "y": 160.0
+      },
+      "settings": {
+        "text": "Hello there! How can we help?",
+        "html": true,
+        "disable_preview": true,
+        "edit_navigation_message": true,
+        "buttons": [
+          {
+            "id": "request",
+            "text": "Leave the application",
+            "type": "transition",
+            "url": ""
+          },
+          {
+            "id": "services",
+            "text": "Choosing a favor",
+            "type": "transition",
+            "url": ""
+          },
+          {
+            "id": "faq",
+            "text": "How the work goes",
+            "type": "transition",
+            "url": ""
+          }
+        ],
+        "columns": 1,
+        "keyboard": "inline"
+      },
+      "required": true,
+      "group": "Main menu"
+    },
+    {
+      "id": "services",
+      "type": "dictionary_select",
+      "title": "Offering",
+      "position": {
+        "x": 780.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Choose a service or direction:",
+        "dictionary": "SERVICES",
+        "title_field": "title",
+        "variable": "service",
+        "columns": 1
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "ask_name",
+      "type": "question",
+      "title": "Name.",
+      "position": {
+        "x": 1170.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "How do I address you?",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 100,
+        "pattern": "",
+        "variable": "client_name",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again."
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "ask_contact",
+      "type": "question",
+      "title": "Contact",
+      "position": {
+        "x": 1510.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Specify the phone, email or convenient method of communication.",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 120,
+        "pattern": "",
+        "variable": "client_contact",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again."
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "ask_details",
+      "type": "question",
+      "title": "Description of the task",
+      "position": {
+        "x": 1850.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Briefly describe the task, timing and expected result.",
+        "answer_type": "text",
+        "required": true,
+        "min_length": null,
+        "max_length": 1000,
+        "pattern": "",
+        "variable": "details",
+        "persist": true,
+        "invalid_message": "Check the format of the answer and try again."
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "request_id",
+      "type": "request_id",
+      "title": "Number of treatment",
+      "position": {
+        "x": 2190.0,
+        "y": 80.0
+      },
+      "settings": {
+        "prefix": "REQ",
+        "random_length": 6,
+        "variable": "request_id"
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "notify",
+      "type": "card",
+      "title": "Request summary",
+      "position": {
+        "x": 2530.0,
+        "y": 80.0
+      },
+      "settings": {
+        "recipient": "requests",
+        "text": "ID: {{ request_id }}\nService: {{ service.title }}\nName: {{ client_name }}\nContact: {{ client_contact }}\nRequest: {{ details }}\nTelegram: @{{ user.username }}\nTelegram ID: {{ user.id }}",
+        "title": "NEW REQUEST"
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "title": "Application accepted",
+      "position": {
+        "x": 2870.0,
+        "y": 80.0
+      },
+      "settings": {
+        "text": "Thank you! Address   {{ request_id }}  has been forwarded to the team.",
+        "show_main_menu": true
+      },
+      "required": true,
+      "group": "Application"
+    },
+    {
+      "id": "faq",
+      "type": "finish",
+      "title": "How the work goes",
+      "position": {
+        "x": 780.0,
+        "y": 560.0
+      },
+      "settings": {
+        "text": "We will clarify the task, offer the appropriate format, agree on the cost and timing, then contact you.",
+        "show_main_menu": true
+      },
+      "required": true,
+      "group": "Information"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_start_next_main",
+      "source": "start",
+      "source_port": "next",
+      "target": "main",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_main_request_services",
+      "source": "main",
+      "source_port": "request",
+      "target": "services",
+      "target_port": "in",
+      "label": "Application"
+    },
+    {
+      "id": "e_main_services_services",
+      "source": "main",
+      "source_port": "services",
+      "target": "services",
+      "target_port": "in",
+      "label": "Services"
+    },
+    {
+      "id": "e_main_faq_faq",
+      "source": "main",
+      "source_port": "faq",
+      "target": "faq",
+      "target_port": "in",
+      "label": "Information"
+    },
+    {
+      "id": "e_services_next_ask_name",
+      "source": "services",
+      "source_port": "next",
+      "target": "ask_name",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_ask_name_next_ask_contact",
+      "source": "ask_name",
+      "source_port": "next",
+      "target": "ask_contact",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_ask_contact_next_ask_details",
+      "source": "ask_contact",
+      "source_port": "next",
+      "target": "ask_details",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_ask_details_next_request_id",
+      "source": "ask_details",
+      "source_port": "next",
+      "target": "request_id",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_request_id_next_notify",
+      "source": "request_id",
+      "source_port": "next",
+      "target": "notify",
+      "target_port": "in",
+      "label": ""
+    },
+    {
+      "id": "e_notify_next_finish",
+      "source": "notify",
+      "source_port": "next",
+      "target": "finish",
+      "target_port": "in",
+      "label": ""
+    }
+  ],
+  "export": {
+    "cloudflare_worker_name": "renovation",
+    "docker_service_name": "renovation",
+    "context_limit": 1400,
+    "http_timeout_seconds": 15
+  },
+  "ui": {
+    "zoom": 1.0,
+    "center_x": 0.0,
+    "center_y": 0.0,
+    "grid": true,
+    "minimap": true
+  }
+}
