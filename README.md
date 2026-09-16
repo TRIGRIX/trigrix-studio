@@ -56,7 +56,7 @@ Run:
 build_windows.bat
 ```
 
-The portable application is generated in `dist/TRIGRIX Studio/`. Python is not required on the target computer. The TRIGRIX icon is embedded in the executable and bundled with the application resources.
+The portable application is generated in `dist/TRIGRIX Studio/`, and the installer is generated as `dist/TRIGRIX-Studio-Windows-x64.msi`. Python is not required on the target computer. The TRIGRIX icon is embedded in the executable and bundled with the application resources.
 
 ## macOS Apple Silicon build
 

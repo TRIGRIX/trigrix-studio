@@ -40,7 +40,7 @@ def build(culture="ru-ru", wix_dir=None, payload=None, output=None):
         raise SystemExit("WiX not found. Run tools/setup_wix.ps1 and repeat the MSI build.")
     folder = ROOT / "build/msi"
     folder.mkdir(parents=True, exist_ok=True)
-    target = Path(output or ROOT / f"dist/TRIGRIX-Studio-{version}-windows-x64.msi").resolve()
+    target = Path(output or ROOT / "dist/TRIGRIX-Studio-Windows-x64.msi").resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     doc = ET.Element(f"{{{WIX_NS}}}Wix")
     product = element(doc, "Product", Id="*", Name="TRIGRIX Studio", Language=LANGUAGES[culture], Version=version, Manufacturer="TRIGRIX Studio", UpgradeCode=UPGRADE_CODE)
