@@ -17,10 +17,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.13 arm64
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           architecture: arm64
@@ -37,7 +37,7 @@ jobs:
       - name: Verify application architecture
         run: |
           file "dist/TRIGRIX Studio.app/Contents/MacOS/TRIGRIX Studio"
-          lipo -verify_arch arm64 "dist/TRIGRIX Studio.app/Contents/MacOS/TRIGRIX Studio"
+          lipo "dist/TRIGRIX Studio.app/Contents/MacOS/TRIGRIX Studio" -verify_arch arm64
           test -f "dist/TRIGRIX-Studio-macOS-arm64.zip"
           test -f "dist/TRIGRIX-Studio-macOS-arm64.dmg"
 
