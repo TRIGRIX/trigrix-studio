@@ -8,11 +8,13 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Qt
 from PySide6.QtTest import QTest
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton, QTextBrowser
 
 from trigrix_studio.gui.about import AboutDialog, WEBSITE, SUPPORT
 from trigrix_studio.gui.dialogs import QFileDialog, QtFileDialog
 from trigrix_studio.gui.main_window import MainWindow
+from trigrix_studio.gui.translations import StandardButtons
 from trigrix_studio.i18n import catalog, tr, ui_text, validate_catalogs, localize_message, template_text
 from trigrix_studio.project.models import SUPPORTED_LOCALES
 from trigrix_studio.templates import create_template
@@ -53,6 +55,10 @@ def test_new_project_windows_and_standard_buttons_follow_locale(locale):
     box.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
     assert box.button(QMessageBox.StandardButton.Save).text() == ui_text("Save", locale)
     assert box.button(QMessageBox.StandardButton.Discard).text() == ui_text("Don't save", locale)
+    unsaved = window._unsaved_changes_dialog()
+    assert unsaved.button(QMessageBox.StandardButton.Save).text() == ui_text("Save", locale)
+    assert unsaved.button(QMessageBox.StandardButton.Discard).text() == ui_text("Don't save", locale)
+    assert unsaved.button(QMessageBox.StandardButton.Cancel).text() == ui_text("Cancel", locale)
     if locale != "ru-RU":
         for root in (window.settings_center, window.integrations_center, window.knowledge_base):
             for widget in root.findChildren(QLabel) + root.findChildren(QPushButton):
@@ -60,6 +66,21 @@ def test_new_project_windows_and_standard_buttons_follow_locale(locale):
     window.knowledge_base.close()
     window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_macos_application_menu_actions_keep_labels_and_roles():
+    qt_app = app()
+    translator = StandardButtons("en-US", qt_app)
+    assert translator.translate("QMenu", "Hide TRIGRIX Studio") is None
+    window = MainWindow("en-US")
+    assert window.knowledge_action.text() == "Knowledge Base"
+    assert window.knowledge_action.menuRole() == QAction.MenuRole.ApplicationSpecificRole
+    assert window.about_action.text() == "About"
+    assert window.about_action.menuRole() == QAction.MenuRole.AboutRole
+    assert window.check_updates_action.text() == "Check for updates"
+    assert window.check_updates_action.menuRole() == QAction.MenuRole.ApplicationSpecificRole
+    assert window.quit_action.menuRole() == QAction.MenuRole.QuitRole
+    window.deleteLater()
 
 
 def test_delete_is_text_only_below_apply_and_stays_hidden_without_selection():

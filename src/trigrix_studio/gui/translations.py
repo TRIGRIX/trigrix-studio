@@ -23,7 +23,7 @@ class StandardButtons(QTranslator):
     def translate(self, context, sourceText, disambiguation=None, n=-1):
         if context in ("QPlatformTheme", "QDialogButtonBox", "QMessageBox") and sourceText in self.SOURCES:
             return ui_text(self.SOURCES[sourceText], self.locale)
-        return ""
+        return None
 
 
 def install_qt_translations(locale):

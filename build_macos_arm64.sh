@@ -14,7 +14,7 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[dev]" pyinstaller
 export QT_QPA_PLATFORM="offscreen"
 
-ICON_SOURCE="resources/branding/trigrix-icon-1024.png"
+ICON_SOURCE="resources/branding/trigrix-icon-macos-1024.png"
 ICONSET_DIR="build/trigrix-studio.iconset"
 ICNS_TARGET="resources/branding/trigrix-studio.icns"
 

@@ -4,6 +4,8 @@ import json
 import zipfile
 from pathlib import Path
 
+from PySide6.QtGui import QImage
+
 from trigrix_studio.generators import ProjectGenerator
 from trigrix_studio.i18n import validate_catalogs
 from trigrix_studio.integrations import (
@@ -170,3 +172,9 @@ def test_brand_assets_cover_desktop_and_about() -> None:
     assert (root / "trigrix-logo-1200.png").stat().st_size > 1000
     assert (root / "trigrix-icon-16.png").exists()
     assert (root / "trigrix-icon-512.png").exists()
+    macos_icon = QImage(str(root / "trigrix-icon-macos-1024.png"))
+    assert macos_icon.width() == 1024 and macos_icon.height() == 1024
+    assert macos_icon.pixelColor(99, 512).alpha() == 0
+    assert macos_icon.pixelColor(100, 512).alpha() > 0
+    assert macos_icon.pixelColor(923, 512).alpha() > 0
+    assert macos_icon.pixelColor(924, 512).alpha() == 0

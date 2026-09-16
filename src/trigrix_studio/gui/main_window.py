@@ -159,7 +159,9 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator(); action(self._t("action.import_project"), self.open_project, None, file_menu)
         action(self._t("action.export_project"), self.export_project_file, None, file_menu)
         action(self._t("action.import_telegram"), self.import_telegram_json, None, file_menu)
-        file_menu.addSeparator(); action(self._t("action.close"), self.close, QKeySequence.StandardKey.Quit, file_menu)
+        file_menu.addSeparator()
+        self.quit_action = action(self._t("action.close"), self.close, QKeySequence.StandardKey.Quit, file_menu)
+        self.quit_action.setMenuRole(QAction.MenuRole.QuitRole)
         action(self._t("action.undo"), self.undo, QKeySequence.StandardKey.Undo, edit_menu)
         action(self._t("action.redo"), self.redo, QKeySequence.StandardKey.Redo, edit_menu)
         edit_menu.addSeparator()
@@ -187,9 +189,12 @@ class MainWindow(QMainWindow):
         for locale in SUPPORTED_LOCALES:
             locale_action = QAction(locale, self); locale_action.setCheckable(True); locale_action.setChecked(locale == self.locale); locale_action.triggered.connect(lambda checked=False, value=locale: self._select_locale(value)); language_menu.addAction(locale_action)
         self.code_mode_action = action("</> " + self._t("action.code"), self.toggle_code_mode, "Ctrl+`", view_menu, True); self.code_mode_action.setCheckable(True)
-        action(self._t("action.knowledge"), self._show_help, "F1", help_menu)
-        action(self._t("action.about"), self._show_about, None, help_menu)
-        action(ui_text("Check for updates", self.locale), lambda: self.check_updates(True), None, help_menu)
+        self.knowledge_action = action(self._t("action.knowledge"), self._show_help, "F1", help_menu)
+        self.knowledge_action.setMenuRole(QAction.MenuRole.ApplicationSpecificRole)
+        self.about_action = action(self._t("action.about"), self._show_about, None, help_menu)
+        self.about_action.setMenuRole(QAction.MenuRole.AboutRole)
+        self.check_updates_action = action(ui_text("Check for updates", self.locale), lambda: self.check_updates(True), None, help_menu)
+        self.check_updates_action.setMenuRole(QAction.MenuRole.ApplicationSpecificRole)
         auto_update = action(ui_text("Check for updates at startup", self.locale), lambda checked: self.settings.setValue("check_updates", checked), None, help_menu)
         auto_update.setCheckable(True)
         auto_update.setChecked(self.settings.value("check_updates", True, type=bool))
@@ -564,9 +569,22 @@ class MainWindow(QMainWindow):
 
     def _confirm_discard(self) -> bool:
         if not self.dirty: return True
-        result = QMessageBox.question(self, ui_text('Unsaved changes', self.locale), ui_text('Save changes before continuing?', self.locale), QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+        box = self._unsaved_changes_dialog()
+        result = QMessageBox.StandardButton(box.exec())
         if result == QMessageBox.StandardButton.Save: return self.save_project()
         return result == QMessageBox.StandardButton.Discard
+
+    def _unsaved_changes_dialog(self) -> QMessageBox:
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(ui_text('Unsaved changes', self.locale))
+        box.setText(ui_text('Save changes before continuing?', self.locale))
+        box.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Save).setText(ui_text('Save', self.locale))
+        box.button(QMessageBox.StandardButton.Discard).setText(ui_text("Don't save", self.locale))
+        box.button(QMessageBox.StandardButton.Cancel).setText(ui_text('Cancel', self.locale))
+        box.setDefaultButton(QMessageBox.StandardButton.Save)
+        return box
 
     def _show_help(self) -> None:
         if self.knowledge_base is None:

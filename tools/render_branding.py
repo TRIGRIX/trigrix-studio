@@ -26,6 +26,14 @@ for size in (16, 24, 32, 48, 64, 128, 256, 512, 1024):
     render("trigrix-icon.svg", f"trigrix-icon-{size}.png", size, size)
 render("trigrix-mark.svg", "trigrix-mark-512.png", 512, 512)
 master = Image.open(root / "trigrix-icon-1024.png").convert("RGBA")
+macos_icon = Image.new("RGBA", master.size, (0, 0, 0, 0))
+macos_artwork_size = 824
+macos_offset = (master.width - macos_artwork_size) // 2
+macos_icon.alpha_composite(
+    master.resize((macos_artwork_size, macos_artwork_size), Image.Resampling.LANCZOS),
+    (macos_offset, macos_offset),
+)
+macos_icon.save(root / "trigrix-icon-macos-1024.png")
 master.save(
     root / "trigrix-studio.ico",
     sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
